@@ -2,7 +2,7 @@ services:
   # FastAPI Backend Web Service
   - type: web
     name: goodwan-inventory-backend
-    env: python
+    runtime: python
     region: oregon
     plan: free
     rootDir: backend
@@ -32,11 +32,9 @@ services:
       - key: CORS_ORIGINS
         value: https://goodwan-inventory-frontend.onrender.com,http://localhost:5173
 
-  # React Frontend Static Site (Global CDN - no region)
-  - type: web
+  # React Frontend Static Site
+  - type: static
     name: goodwan-inventory-frontend
-    env: static
-    plan: free
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
