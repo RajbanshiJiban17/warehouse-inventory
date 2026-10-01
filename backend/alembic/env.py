@@ -58,7 +58,7 @@ def run_migrations_online() -> None:
         if not settings.is_sqlite:
             from sqlalchemy import text
             connection.execute(text("CREATE SCHEMA IF NOT EXISTS inventory;"))
-            connection.execute(text("SET search_path TO inventory, public;"))
+            connection.execute(text("SET search_path TO inventory;"))
             connection.commit()
 
         context.configure(
@@ -69,6 +69,9 @@ def run_migrations_online() -> None:
         )
 
         with context.begin_transaction():
+            if not settings.is_sqlite:
+                from sqlalchemy import text
+                connection.execute(text("SET search_path TO inventory;"))
             context.run_migrations()
 
 

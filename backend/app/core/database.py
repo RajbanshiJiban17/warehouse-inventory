@@ -32,7 +32,7 @@ else:
     def set_postgresql_schema(dbapi_connection, connection_record):
         cursor = dbapi_connection.cursor()
         cursor.execute("CREATE SCHEMA IF NOT EXISTS inventory;")
-        cursor.execute("SET search_path TO inventory, public;")
+        cursor.execute("SET search_path TO inventory;")
         cursor.close()
 
 SessionLocal = sessionmaker(
