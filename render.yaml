@@ -14,7 +14,7 @@ services:
       - key: ENVIRONMENT
         value: production
       - key: DATABASE_URL
-        value: postgresql://retailiq_admin:2uCfju1XvxVlBUyi20tcxd83n3SuE3xn@dpg-dam3cme7bikc73862pk0-a/retailiq_nepal
+        value: postgresql://retailiq_admin:2uCfju1XvxVlBUyi20tcxd83n3SuE3xn@dpg-dam3cme7bikc73862pk0-a/retailiq_nepal?options=-csearch_path%3Dinventory,public
       - key: SECRET_KEY
         generateValue: true
       - key: REFRESH_SECRET_KEY

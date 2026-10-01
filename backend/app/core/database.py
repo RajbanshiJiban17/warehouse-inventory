@@ -27,6 +27,13 @@ if settings.is_sqlite:
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
+else:
+    @event.listens_for(engine, "connect")
+    def set_postgresql_schema(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("CREATE SCHEMA IF NOT EXISTS inventory;")
+        cursor.execute("SET search_path TO inventory, public;")
+        cursor.close()
 
 SessionLocal = sessionmaker(
     autocommit=False,
