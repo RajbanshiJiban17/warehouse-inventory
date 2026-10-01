@@ -42,5 +42,17 @@ services:
     volumes:
       - ./backend:/app
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: inventory_frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
 volumes:
   postgres_data:
+
