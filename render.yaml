@@ -33,8 +33,9 @@ services:
         value: https://goodwan-inventory-frontend.onrender.com,http://localhost:5173
 
   # React Frontend Static Site
-  - type: static
+  - type: web
     name: goodwan-inventory-frontend
+    runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: dist
