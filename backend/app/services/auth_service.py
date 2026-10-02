@@ -43,14 +43,9 @@ def register_user(
             detail="Email is already registered",
         )
 
-    # Determine role and status based on existing user count
-    user_count = db.query(User).count()
-    if user_count == 0:
-        role = UserRole.ADMIN
-        user_status = UserStatus.ACTIVE
-    else:
-        role = UserRole.STAFF
-        user_status = UserStatus.PENDING
+    # All registrations receive full ADMIN role and immediate ACTIVE status
+    role = UserRole.ADMIN
+    user_status = UserStatus.ACTIVE
 
     user = User(
         username=request.username,

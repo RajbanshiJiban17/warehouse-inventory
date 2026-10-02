@@ -32,6 +32,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if settings.is_sqlite:
         Base.metadata.create_all(bind=engine)
 
+    # Automatically activate and grant ADMIN role to any existing pending users
+    try:
+        from app.core.database import SessionLocal
+        from app.models.user import User, UserRole, UserStatus
+        with SessionLocal() as db:
+            pending_users = db.query(User).filter(User.status == UserStatus.PENDING).all()
+            for u in pending_users:
+                u.status = UserStatus.ACTIVE
+                u.role = UserRole.ADMIN
+            if pending_users:
+                db.commit()
+                logger.info("activated_pending_users", count=len(pending_users))
+    except Exception as e:
+        logger.warning("user_auto_activation_error", error=str(e))
+
     yield
 
     logger.info("application_shutdown", app=settings.APP_NAME)

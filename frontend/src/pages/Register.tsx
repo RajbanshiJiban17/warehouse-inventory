@@ -21,12 +21,8 @@ export const Register: React.FC = () => {
     setErrorMsg('');
 
     try {
-      const newUser = await register(username, email, password);
-      if (newUser.role === 'ADMIN') {
-        showToast('success', 'Admin Account Created', 'You have been registered as system Administrator.');
-      } else {
-        showToast('info', 'Registration Pending', 'Your account has been submitted for Admin approval.');
-      }
+      await register(username, email, password);
+      showToast('success', 'Admin Account Created', 'Your account has been granted full Administrator access. You can now log in.');
       navigate('/login');
     } catch (err: any) {
       setErrorMsg(err.message || 'Registration failed. Please check your inputs.');
@@ -47,11 +43,11 @@ export const Register: React.FC = () => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
         <div className="bg-slate-900/90 backdrop-blur-xl border border-slate-800 py-8 px-6 shadow-2xl rounded-2xl sm:px-10">
-          {/* First User Notice Banner */}
+          {/* Admin Notice Banner */}
           <div className="mb-6 p-3.5 rounded-xl bg-brand-950/50 border border-brand-800/60 text-brand-200 text-xs flex items-start space-x-2.5">
             <CheckCircle2 className="w-4 h-4 text-brand-400 flex-shrink-0 mt-0.5" />
             <span className="leading-relaxed">
-              Note: The very first registered user automatically becomes <strong>ADMIN</strong>. Subsequent registrations will require administrator approval.
+              All registered accounts are automatically granted full <strong>ADMIN</strong> privileges with immediate active access.
             </span>
           </div>
 

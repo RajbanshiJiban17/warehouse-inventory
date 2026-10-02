@@ -24,7 +24,7 @@ def test_registration_first_user_admin_second_user_pending(client: TestClient):
     assert data1["role"] == UserRole.ADMIN
     assert data1["status"] == UserStatus.ACTIVE
 
-    # 2. Register second user -> becomes STAFF and PENDING
+    # 2. Register second user -> also becomes ADMIN and ACTIVE (direct admin access)
     res2 = client.post(
         "/api/auth/register",
         json={
@@ -36,23 +36,22 @@ def test_registration_first_user_admin_second_user_pending(client: TestClient):
     assert res2.status_code == 201
     data2 = res2.json()
     assert data2["username"] == "second_staff"
-    assert data2["role"] == UserRole.STAFF
-    assert data2["status"] == UserStatus.PENDING
+    assert data2["role"] == UserRole.ADMIN
+    assert data2["status"] == UserStatus.ACTIVE
 
 
-def test_pending_user_cannot_login(client: TestClient):
-    # Register first (admin)
-    client.post(
-        "/api/auth/register",
-        json={"username": "boss", "email": "boss@example.com", "password": "SuperPass@2026"},
-    )
-    # Register second (pending staff)
+def test_pending_user_cannot_login(client: TestClient, db_session: Session):
+    # Register user
     client.post(
         "/api/auth/register",
         json={"username": "worker", "email": "worker@example.com", "password": "SuperPass@2026"},
     )
+    # Manually set to PENDING in DB
+    u = db_session.query(User).filter_by(username="worker").first()
+    u.status = UserStatus.PENDING
+    db_session.commit()
 
-    # Attempt login with pending staff
+    # Attempt login with pending user
     res = client.post(
         "/api/auth/login",
         json={"username": "worker", "password": "SuperPass@2026"},
@@ -184,7 +183,7 @@ def test_refresh_token_rotation_and_reuse_detection(client: TestClient, db_sessi
     assert res_family.status_code == 401
 
 
-def test_rbac_staff_cannot_access_admin_endpoints(client: TestClient):
+def test_rbac_staff_cannot_access_admin_endpoints(client: TestClient, db_session: Session):
     # 1. Register admin and staff
     client.post(
         "/api/auth/register",
@@ -196,16 +195,10 @@ def test_rbac_staff_cannot_access_admin_endpoints(client: TestClient):
     )
     staff_id = staff_reg.json()["id"]
 
-    # Admin logs in to approve staff
-    admin_login = client.post(
-        "/api/auth/login",
-        json={"username": "admn", "password": "SuperPass@2026"},
-    )
-    admin_token = admin_login.json()["accessToken"]
-    client.patch(
-        f"/api/users/{staff_id}/approve",
-        headers={"Authorization": f"Bearer {admin_token}", "X-Requested-With": "XMLHttpRequest"},
-    )
+    # Explicitly set to STAFF
+    staff_user = db_session.query(User).filter_by(id=staff_id).first()
+    staff_user.role = UserRole.STAFF
+    db_session.commit()
 
     # Staff logs in
     staff_login = client.post(
