@@ -278,45 +278,46 @@ def soft_delete_item(
 
 
 def _normalize_key(key: str) -> str:
+    if not key:
+        return ""
     cleaned = "".join(c.lower() for c in str(key) if c.isalnum())
-    # Item Name / Description
-    if cleaned in (
-        "itemname", "name", "description", "itemdescription", "particulars", 
-        "product", "productname", "productdescription", "item", "title", "goods",
-        "itemdetails", "details", "itemtitle", "items"
-    ):
-        return "itemName"
-    # Item Code
-    if cleaned in (
-        "itemcode", "code", "sku", "partno", "partnum", "itemno", "itemnumber",
-        "productcode", "productno", "model", "modelno", "id"
-    ):
-        return "itemCode"
+    
     # Serial Number / S.N.
-    if cleaned in ("sn", "sno", "sn.", "sno.", "slno", "serialno", "serialnumber"):
+    if cleaned in ("sn", "sno", "sn.", "sno.", "slno", "serialno", "serialnumber", "no", "num", "number", "क्रमसंख्या", "क्रसं"):
         return "sn"
+
     # Barcode
-    if cleaned in ("barcode", "bar", "upc", "ean", "ean13", "upca", "qrcode", "qr"):
+    if any(b in cleaned for b in ("barcode", "bar", "upc", "ean", "qrcode", "qr")):
         return "barcode"
+
     # Category
-    if cleaned in ("categoryname", "category", "cat", "group", "department", "dept", "class", "type"):
+    if any(c in cleaned for c in ("category", "cat", "group", "department", "dept", "class", "genre", "वर्ग", "समूह")):
         return "categoryName"
+
     # Unit
-    if cleaned in ("unitname", "unit", "uom", "measure", "unitofmeasure", "unitofmeasurement"):
+    if any(u in cleaned for u in ("unit", "uom", "measure", "measurement", "इकाइ")):
         return "unitName"
-    # Opening Stock / Quantity
-    if cleaned in (
-        "openingquantity", "openingqty", "openingstock", "quantity", "qty", "stock",
-        "currentstock", "availablequantity", "availablestock", "balance", "totalqty",
-        "totalstock", "count", "closingstock", "qtyinhand", "inhand"
-    ):
-        return "openingQuantity"
-    # Min Stock Level
-    if cleaned in (
-        "minstocklevel", "minstock", "minlevel", "alertlevel", "reorderlevel",
-        "minimumstock", "minqty", "safetyquantity", "threshold"
-    ):
+
+    # Min Stock Level (check before opening stock because 'min stock' contains 'stock')
+    if any(m in cleaned for m in ("minstock", "minlevel", "alert", "reorder", "safety", "threshold", "minimum", "minqty")):
         return "minStockLevel"
+
+    # Opening Stock / Quantity
+    if any(q in cleaned for q in ("quantity", "qty", "stock", "balance", "opening", "count", "closing", "inhand", "परिमाण", "मौज्दात")):
+        return "openingQuantity"
+
+    # Item Code
+    if any(cd in cleaned for cd in ("itemcode", "sku", "partno", "partnum", "partnumber", "model", "modelno", "productcode", "itemno", "itemnumber", "code", "संकेत")):
+        return "itemCode"
+
+    # Item Name / Description / Particulars
+    if any(n in cleaned for n in (
+        "particular", "description", "itemname", "itemdesc", "desc", "goods",
+        "product", "item", "material", "article", "title", "spec", "name",
+        "detail", "सामान", "विवरण", "नाम"
+    )):
+        return "itemName"
+
     return str(key).strip()
 
 
@@ -339,9 +340,10 @@ def import_items_from_file(
     if filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls"):
         import openpyxl
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
-        sheet = wb.active
+        # Select sheet with maximum rows in case first sheet is empty or an instruction tab
+        sheet = max(wb.worksheets, key=lambda s: s.max_row or 0) if wb.worksheets else wb.active
 
-        # Scan the first 10 rows to detect the true header row
+        # Scan the first 15 rows to detect the true header row
         header_row_idx = 1
         best_match_count = 0
 
@@ -378,6 +380,8 @@ def import_items_from_file(
                         except Exception:
                             pass
                     row_dict[headers[col_idx]] = val_str
+            # Store all non-empty raw cell values for fallback lookup
+            row_dict["_raw_values"] = [str(v).strip() for v in row_cells if v is not None and str(v).strip()]
             raw_rows.append(row_dict)
     else:
         csv_text = file_bytes.decode("utf-8-sig", errors="replace")
@@ -386,7 +390,7 @@ def import_items_from_file(
         if all_lines:
             header_row_idx = 0
             best_match_count = 0
-            for r_idx in range(min(10, len(all_lines))):
+            for r_idx in range(min(15, len(all_lines))):
                 norm_keys = [_normalize_key(v.strip()) for v in all_lines[r_idx] if v.strip()]
                 match_count = sum(1 for k in norm_keys if k in known_keys)
                 if match_count > best_match_count:
@@ -401,6 +405,7 @@ def import_items_from_file(
                 for col_idx, cell_value in enumerate(line):
                     if col_idx < len(headers) and headers[col_idx]:
                         row_dict[headers[col_idx]] = cell_value.strip()
+                row_dict["_raw_values"] = [v.strip() for v in line if v.strip()]
                 raw_rows.append(row_dict)
 
     total_rows = len(raw_rows)
@@ -435,22 +440,44 @@ def import_items_from_file(
         raw_unit = (row.get("unitName") or "pcs").strip()
         opening_str = (row.get("openingQuantity") or "0").strip()
         min_stock_str = (row.get("minStockLevel") or "0").strip()
+        raw_vals = row.get("_raw_values", [])
 
         try:
-            # Flexible identification: if name is missing but code exists
+            # Fallback 1: If name is missing, search through raw row values for text with letters
+            if not name:
+                for v in raw_vals:
+                    v_str = str(v).strip()
+                    if v_str and any(c.isalpha() for c in v_str) and v_str.lower() not in (raw_cat.lower(), raw_unit.lower(), "pcs", "general"):
+                        name = v_str
+                        break
+
+            # Fallback 2: If name still missing but code exists, use code
             if not name and code:
                 name = code
             elif not name and not code:
-                errors.append(ItemImportRowError(rowNumber=index, itemCode=code, barcode=barcode, error="Missing required fields"))
+                # If row is empty or only pure numbers
+                if not raw_vals:
+                    continue
+                errors.append(ItemImportRowError(rowNumber=index, itemCode=code, barcode=barcode, error="Row missing item name or description"))
                 continue
 
-            # Auto-assign code if missing
+            # Auto-assign unique code if missing
             if not code:
-                code = f"ITM-{sn}" if sn else f"ITM-{index:04d}"
+                candidate_code = f"ITM-{sn}" if sn else f"ITM-{index:04d}"
+                c_idx = 0
+                while db.query(Item).filter(Item.itemCode == candidate_code).first():
+                    c_idx += 1
+                    candidate_code = f"ITM-{index:04d}-{c_idx}"
+                code = candidate_code
 
-            # Auto-assign barcode if missing
+            # Auto-assign collision-safe barcode if missing
             if not barcode:
-                barcode = f"890{abs(hash(code)) % 1000000000:09d}"
+                candidate_bc = f"890{index:09d}"
+                b_idx = 0
+                while db.query(Item).filter(Item.barcode == candidate_bc).first():
+                    b_idx += 1
+                    candidate_bc = f"890{index + b_idx * 100000:09d}"
+                barcode = candidate_bc
 
             # Category resolution
             cat_name = raw_cat.lower()
