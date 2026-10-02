@@ -1,11 +1,13 @@
-from datetime import datetime, timezone
-import pytest
+import os
+import sys
+
+# Ensure backend root is in Python import path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.models.user import User, UserRole, UserStatus
-from app.models.audit import AuditLog, AuditAction
-from app.models.auth import RefreshToken
 
 
 def test_registration_first_user_admin_second_user_pending(client: TestClient):

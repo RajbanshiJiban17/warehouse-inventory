@@ -1,3 +1,9 @@
+import os
+import sys
+
+# Ensure backend root is in Python import path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
 import pytest
