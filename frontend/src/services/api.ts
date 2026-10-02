@@ -52,7 +52,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   }
 
   if (!response.ok) {
-    const errorMsg = data?.detail || data?.message || (typeof data === 'string' ? data : 'API Request Failed');
+    let errorMsg = data?.detail || data?.message || (typeof data === 'string' ? data : 'API Request Failed');
+    if (data?.errors && Array.isArray(data.errors) && data.errors.length > 0) {
+      errorMsg = `${errorMsg} (${data.errors.join('; ')})`;
+    }
     throw new ApiError(response.status, errorMsg, data);
   }
 
