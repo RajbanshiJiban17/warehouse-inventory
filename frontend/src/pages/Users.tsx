@@ -94,9 +94,8 @@ export const UsersPage: React.FC = () => {
     e.preventDefault();
     setCreateError('');
     try {
-      await api.createCategory; // ensure api is loaded
-      await api.register(createForm); // or direct user creation
-      showToast('success', 'User Created', `User ${createForm.username} created successfully.`);
+      await api.createUser(createForm);
+      showToast('success', 'User Created', `User ${createForm.username} created successfully with role ${createForm.role}.`);
       setIsCreateOpen(false);
       setCreateForm({ username: '', email: '', password: '', role: 'STAFF', status: 'ACTIVE' });
       fetchUsers();

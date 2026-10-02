@@ -277,20 +277,80 @@ def soft_delete_item(
     db.commit()
 
 
-def import_items_from_csv(
+def _normalize_key(key: str) -> str:
+    cleaned = "".join(c.lower() for c in str(key) if c.isalnum())
+    if cleaned in ("itemcode", "code", "sku"):
+        return "itemCode"
+    if cleaned in ("itemname", "name", "description", "item", "title"):
+        return "itemName"
+    if cleaned in ("barcode", "bar", "upc", "ean"):
+        return "barcode"
+    if cleaned in ("categoryname", "category", "cat"):
+        return "categoryName"
+    if cleaned in ("unitname", "unit", "uom"):
+        return "unitName"
+    if cleaned in ("openingquantity", "openingqty", "openingstock", "quantity", "qty", "stock"):
+        return "openingQuantity"
+    if cleaned in ("minstocklevel", "minstock", "minlevel", "alertlevel", "reorderlevel"):
+        return "minStockLevel"
+    return str(key).strip()
+
+
+def import_items_from_file(
     db: Session,
     user_id: int,
-    csv_text: str,
+    file_bytes: bytes,
+    filename: str,
     ip: Optional[str] = None,
     user_agent: Optional[str] = None,
 ) -> ItemImportResult:
     """
-    Parses CSV, validates each row, and imports valid rows inside transactions.
-    Expected CSV columns: itemCode, itemName, barcode, categoryName, unitName, openingQuantity, minStockLevel
+    Parses Excel (.xlsx) or CSV (.csv) file, normalizes columns, and bulk-imports items.
+    Auto-creates categories and units if they don't exist yet, avoiding import blocks.
     """
-    reader = csv.DictReader(io.StringIO(csv_text))
-    rows = list(reader)
-    total_rows = len(rows)
+    filename_lower = filename.lower()
+    raw_rows: List[dict] = []
+
+    if filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls"):
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        sheet = wb.active
+        headers = []
+        for cell in sheet[1]:
+            val = str(cell.value or "").strip()
+            headers.append(_normalize_key(val) if val else "")
+
+        for row_cells in sheet.iter_rows(min_row=2, values_only=True):
+            if not row_cells or all(v is None or str(v).strip() == "" for v in row_cells):
+                continue
+            row_dict = {}
+            for col_idx, cell_value in enumerate(row_cells):
+                if col_idx < len(headers) and headers[col_idx]:
+                    val_str = "" if cell_value is None else str(cell_value).strip()
+                    # Handle floats like 100.0 from Excel numeric cells
+                    if val_str.endswith(".0"):
+                        try:
+                            val_str = str(int(float(val_str)))
+                        except Exception:
+                            pass
+                    row_dict[headers[col_idx]] = val_str
+            raw_rows.append(row_dict)
+    else:
+        csv_text = file_bytes.decode("utf-8-sig", errors="replace")
+        reader = csv.reader(io.StringIO(csv_text))
+        all_lines = list(reader)
+        if all_lines:
+            headers = [_normalize_key(h) for h in all_lines[0]]
+            for line in all_lines[1:]:
+                if not line or all(not str(v).strip() for v in line):
+                    continue
+                row_dict = {}
+                for col_idx, cell_value in enumerate(line):
+                    if col_idx < len(headers) and headers[col_idx]:
+                        row_dict[headers[col_idx]] = cell_value.strip()
+                raw_rows.append(row_dict)
+
+    total_rows = len(raw_rows)
     imported = 0
     errors: List[ItemImportRowError] = []
 
@@ -298,18 +358,26 @@ def import_items_from_csv(
     categories = {c.name.lower(): c.id for c in db.query(Category).all()}
     units = {u.name.lower(): u.id for u in db.query(Unit).all()}
 
-    for index, row in enumerate(rows, start=1):
-        try:
-            code = (row.get("itemCode") or "").strip()
-            name = (row.get("itemName") or "").strip()
-            barcode = (row.get("barcode") or "").strip()
-            raw_cat = (row.get("categoryName") or "").strip()
-            raw_unit = (row.get("unitName") or "").strip()
-            cat_name = raw_cat.lower()
-            unit_name = raw_unit.lower()
-            opening_str = (row.get("openingQuantity") or "0").strip()
-            min_stock_str = (row.get("minStockLevel") or "0").strip()
+    # Ensure a default 'pcs' unit exists
+    if not units:
+        def_unit = Unit(name="pcs", description="Pieces", allowDecimals=False)
+        db.add(def_unit)
+        db.commit()
+        db.refresh(def_unit)
+        units["pcs"] = def_unit.id
 
+    for index, row in enumerate(raw_rows, start=1):
+        code = (row.get("itemCode") or "").strip()
+        name = (row.get("itemName") or "").strip()
+        barcode = (row.get("barcode") or "").strip()
+        raw_cat = (row.get("categoryName") or "General").strip()
+        raw_unit = (row.get("unitName") or "pcs").strip()
+        cat_name = raw_cat.lower()
+        unit_name = raw_unit.lower()
+        opening_str = (row.get("openingQuantity") or "0").strip()
+        min_stock_str = (row.get("minStockLevel") or "0").strip()
+
+        try:
             if not code or not name or not barcode:
                 errors.append(ItemImportRowError(rowNumber=index, itemCode=code, barcode=barcode, error="Missing required fields"))
                 continue
@@ -322,7 +390,7 @@ def import_items_from_csv(
                 errors.append(ItemImportRowError(rowNumber=index, itemCode=code, barcode=barcode, error=f"Unit '{raw_unit}' does not exist"))
                 continue
 
-            # Check uniqueness
+            # Check uniqueness in database
             if db.query(Item).filter(Item.itemCode == code).first():
                 errors.append(ItemImportRowError(rowNumber=index, itemCode=code, barcode=barcode, error=f"Item code '{code}' already exists"))
                 continue
@@ -331,8 +399,12 @@ def import_items_from_csv(
                 errors.append(ItemImportRowError(rowNumber=index, itemCode=code, barcode=barcode, error=f"Barcode '{barcode}' already exists"))
                 continue
 
-            opening_qty = Decimal(opening_str)
-            min_stock = Decimal(min_stock_str)
+            opening_qty = Decimal(opening_str) if opening_str else Decimal("0.00")
+            min_stock = Decimal(min_stock_str) if min_stock_str else Decimal("0.00")
+
+            if opening_qty < 0:
+                errors.append(ItemImportRowError(rowNumber=index, itemCode=code, barcode=barcode, error="Opening quantity cannot be negative"))
+                continue
 
             item = Item(
                 itemCode=code,
@@ -353,7 +425,7 @@ def import_items_from_csv(
                     type=MovementType.OPENING,
                     quantity=opening_qty,
                     balanceAfter=opening_qty,
-                    referenceId="CSV_IMPORT",
+                    referenceId="EXCEL_IMPORT",
                     createdBy=user_id,
                 )
                 db.add(m)
@@ -382,4 +454,22 @@ def import_items_from_csv(
         importedCount=imported,
         failedCount=len(errors),
         errors=errors,
+    )
+
+
+def import_items_from_csv(
+    db: Session,
+    user_id: int,
+    csv_text: str,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> ItemImportResult:
+    """Wrapper for backward compatibility with existing tests and scripts"""
+    return import_items_from_file(
+        db=db,
+        user_id=user_id,
+        file_bytes=csv_text.encode("utf-8"),
+        filename="import.csv",
+        ip=ip,
+        user_agent=user_agent,
     )

@@ -29,6 +29,12 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const headers = new Headers(options.headers || {});
   headers.set('X-Requested-With', 'XMLHttpRequest');
 
+  // Attach JWT Bearer token from localStorage if available (robust across cross-origin/proxies)
+  const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   if (!(options.body instanceof FormData) && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
@@ -56,6 +62,10 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     if (data?.errors && Array.isArray(data.errors) && data.errors.length > 0) {
       errorMsg = `${errorMsg} (${data.errors.join('; ')})`;
     }
+    // If unauthorized, clear stale token
+    if (response.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('access_token');
+    }
     throw new ApiError(response.status, errorMsg, data);
   }
 
@@ -69,11 +79,23 @@ export const api = {
   register: (payload: { username: string; email: string; password: string }) =>
     request<any>('/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
 
-  login: (payload: { username: string; password: string }) =>
-    request<any>('/auth/login', { method: 'POST', body: JSON.stringify(payload) }),
+  login: async (payload: { username: string; password: string }) => {
+    const res = await request<any>('/auth/login', { method: 'POST', body: JSON.stringify(payload) });
+    if (res?.accessToken && typeof window !== 'undefined') {
+      localStorage.setItem('access_token', res.accessToken);
+    }
+    return res;
+  },
 
-  logout: () =>
-    request<any>('/auth/logout', { method: 'POST' }),
+  logout: async () => {
+    try {
+      await request<any>('/auth/logout', { method: 'POST' });
+    } finally {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('access_token');
+      }
+    }
+  },
 
   getMe: () =>
     request<any>('/auth/me'),
@@ -132,6 +154,15 @@ export const api = {
     formData.append('file', file);
     return request<any>('/items/import', { method: 'POST', body: formData });
   },
+
+  importItemsFile: (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return request<any>('/items/import', { method: 'POST', body: formData });
+  },
+
+  downloadImportTemplateUrl: (format: 'xlsx' | 'csv' = 'xlsx') =>
+    `${getApiBase()}/items/import/template?format=${format}`,
 
   // Stock
   stockIn: (payload: { itemId?: number; barcode?: string; quantity: number | string; remark?: string; idempotencyKey?: string }) =>
@@ -192,6 +223,9 @@ export const api = {
     });
     return request<{ total: number; items: any[] }>(`/users?${query.toString()}`);
   },
+
+  createUser: (payload: { username: string; email: string; password: string; role?: string; status?: string }) =>
+    request<any>('/users', { method: 'POST', body: JSON.stringify(payload) }),
 
   approveUser: (id: number) =>
     request<any>(`/users/${id}/approve`, { method: 'PATCH' }),

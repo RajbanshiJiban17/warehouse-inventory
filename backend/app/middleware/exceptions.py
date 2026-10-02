@@ -57,10 +57,12 @@ def register_exception_handlers(app: FastAPI) -> None:
             "unhandled_internal_error",
             path=request.url.path,
             method=request.method,
+            error=str(exc),
             exc_info=exc,
         )
-        # Never leak internal traces to client
+        from app.core.config import settings
+        detail_msg = f"Internal server error: {str(exc)}" if settings.DEBUG else "An internal server error occurred. Please contact the administrator."
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            content={"detail": "An internal server error occurred. Please contact the administrator."},
+            content={"detail": detail_msg},
         )

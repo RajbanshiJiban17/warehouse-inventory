@@ -6,6 +6,9 @@ from app.core.config import settings
 connect_args = {}
 if settings.is_sqlite:
     connect_args["check_same_thread"] = False
+else:
+    # Ensure all PostgreSQL connections automatically have search_path set to inventory, public
+    connect_args["options"] = "-c search_path=inventory,public"
 
 db_url = settings.DATABASE_URL
 if db_url.startswith("postgresql://"):
@@ -20,7 +23,7 @@ engine = create_engine(
     echo=False,
 )
 
-# Enable foreign key support for SQLite
+# Enable foreign key support for SQLite, or ensure schema/search_path for PostgreSQL
 if settings.is_sqlite:
     @event.listens_for(engine, "connect")
     def set_sqlite_pragma(dbapi_connection, connection_record):
@@ -30,10 +33,24 @@ if settings.is_sqlite:
 else:
     @event.listens_for(engine, "connect")
     def set_postgresql_schema(dbapi_connection, connection_record):
-        cursor = dbapi_connection.cursor()
-        cursor.execute("CREATE SCHEMA IF NOT EXISTS inventory;")
-        cursor.execute("SET search_path TO inventory;")
-        cursor.close()
+        try:
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute("CREATE SCHEMA IF NOT EXISTS inventory;")
+                cursor.execute("SET search_path TO inventory, public;")
+            if hasattr(dbapi_connection, "commit"):
+                dbapi_connection.commit()
+        except Exception:
+            pass
+
+    @event.listens_for(engine, "checkout")
+    def set_postgresql_checkout(dbapi_connection, connection_record, connection_proxy):
+        try:
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute("SET search_path TO inventory, public;")
+            if hasattr(dbapi_connection, "commit"):
+                dbapi_connection.commit()
+        except Exception:
+            pass
 
 SessionLocal = sessionmaker(
     autocommit=False,

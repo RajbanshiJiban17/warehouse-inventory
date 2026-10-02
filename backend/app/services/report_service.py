@@ -327,8 +327,13 @@ def get_dormant_items_report_data(db: Session, days: int = 30) -> List[DormantIt
             StockMovement.type.in_([MovementType.IN, MovementType.OUT]),
         ).scalar()
 
-        if not last_mov or last_mov < cutoff:
-            inactive_days = (datetime.now(timezone.utc) - last_mov).days if last_mov else days
+        if not last_mov or (last_mov.replace(tzinfo=timezone.utc) if last_mov.tzinfo is None else last_mov) < cutoff:
+            if last_mov:
+                lm = last_mov.replace(tzinfo=timezone.utc) if last_mov.tzinfo is None else last_mov
+                inactive_days = (datetime.now(timezone.utc) - lm).days
+            else:
+                inactive_days = days
+
             dormant_list.append(
                 DormantItem(
                     itemCode=it.itemCode,
@@ -349,6 +354,11 @@ def get_user_activity_report_data(
 ) -> List[UserActivityReportItem]:
     users = db.query(User).all()
     report = []
+
+    if start_date and start_date.tzinfo is None:
+        start_date = start_date.replace(tzinfo=timezone.utc)
+    if end_date and end_date.tzinfo is None:
+        end_date = end_date.replace(tzinfo=timezone.utc)
 
     for u in users:
         # Stock In stats

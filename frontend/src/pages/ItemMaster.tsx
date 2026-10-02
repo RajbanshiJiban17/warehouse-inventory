@@ -14,7 +14,7 @@ import {
   Barcode,
 } from 'lucide-react';
 import type { Item, Category, Unit } from '../types';
-import { api } from '../services/api';
+import { api, getApiBase } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
 
@@ -190,14 +190,14 @@ export const ItemMaster: React.FC = () => {
     }
   };
 
-  const handleImportCsv = async (e: React.FormEvent) => {
+  const handleImportFile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!importFile) return;
     setIsImporting(true);
     setImportResult(null);
 
     try {
-      const res = await api.importItemsCsv(importFile);
+      const res = await api.importItemsFile(importFile);
       setImportResult(res);
       showToast('success', 'Import Completed', `Imported ${res.importedCount} items.`);
       fetchItems();
@@ -224,14 +224,14 @@ export const ItemMaster: React.FC = () => {
 
         <div className="flex flex-wrap items-center gap-2.5">
           <button
-            onClick={() => window.open('/api/items/export/data?format=csv', '_blank')}
+            onClick={() => window.open(`${getApiBase()}/items/export/data?format=csv`, '_blank')}
             className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 text-slate-200 hover:text-white rounded-xl text-xs font-semibold border border-slate-700 hover:bg-slate-700 transition"
           >
             <Download className="w-4 h-4 text-emerald-400" />
             <span>CSV</span>
           </button>
           <button
-            onClick={() => window.open('/api/items/export/data?format=xlsx', '_blank')}
+            onClick={() => window.open(`${getApiBase()}/items/export/data?format=xlsx`, '_blank')}
             className="flex items-center space-x-1.5 px-3 py-2 bg-slate-800 text-slate-200 hover:text-white rounded-xl text-xs font-semibold border border-slate-700 hover:bg-slate-700 transition"
           >
             <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
@@ -337,8 +337,38 @@ export const ItemMaster: React.FC = () => {
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
-                    No inventory items matched your filter criteria.
+                  <td colSpan={7} className="px-6 py-14 text-center">
+                    <div className="flex flex-col items-center justify-center space-y-3">
+                      <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500">
+                        <Boxes className="w-6 h-6" />
+                      </div>
+                      <p className="text-base font-semibold text-white">No Inventory Items Found</p>
+                      <p className="text-xs text-slate-400 max-w-sm">
+                        Your warehouse catalog is currently empty. Upload an Excel (.xlsx) spreadsheet to import all items, or register items manually.
+                      </p>
+                      <div className="flex items-center space-x-3 pt-2">
+                        {isAdmin && (
+                          <button
+                            onClick={() => {
+                              setImportFile(null);
+                              setImportResult(null);
+                              setIsImportOpen(true);
+                            }}
+                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 rounded-xl text-xs font-semibold flex items-center space-x-2 transition"
+                          >
+                            <Upload className="w-4 h-4" />
+                            <span>Bulk Import (Excel / CSV)</span>
+                          </button>
+                        )}
+                        <button
+                          onClick={handleOpenCreate}
+                          className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold flex items-center space-x-2 shadow-lg shadow-brand-600/30 transition"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Register New Item</span>
+                        </button>
+                      </div>
+                    </div>
                   </td>
                 </tr>
               ) : (
@@ -669,31 +699,44 @@ export const ItemMaster: React.FC = () => {
         </div>
       )}
 
-      {/* CSV IMPORT MODAL */}
+      {/* EXCEL / CSV BULK IMPORT MODAL */}
       {isImportOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
             <div className="flex justify-between items-center pb-4 border-b border-slate-800">
               <h2 className="text-lg font-bold text-white flex items-center space-x-2">
                 <Upload className="w-5 h-5 text-brand-400" />
-                <span>Bulk Import Items via CSV</span>
+                <span>Bulk Import Items (Excel / CSV)</span>
               </h2>
               <button onClick={() => setIsImportOpen(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="mt-4 p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-400 leading-relaxed">
-              Required CSV Columns: <code className="text-brand-300">itemCode, itemName, barcode, categoryName, unitName, openingQuantity, minStockLevel</code>
+            <div className="mt-4 p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+              <div className="flex justify-between items-center text-xs">
+                <span className="text-slate-400">Accepted formats: <strong className="text-emerald-400">.xlsx, .xls, .csv</strong></span>
+                <a
+                  href={`${getApiBase()}/items/import/template?format=xlsx`}
+                  download="inventory_import_template.xlsx"
+                  className="text-brand-400 hover:text-brand-300 font-semibold underline flex items-center space-x-1"
+                >
+                  <Download className="w-3.5 h-3.5 inline mr-1" />
+                  <span>Download Excel Template</span>
+                </a>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Columns: <code className="text-brand-300">Item Code, Item Name, Barcode, Category, Unit, Opening Stock, Min Stock Level</code>. Categories and Units will be auto-created if they don't exist.
+              </p>
             </div>
 
-            <form onSubmit={handleImportCsv} className="mt-4 space-y-4">
+            <form onSubmit={handleImportFile} className="mt-4 space-y-4">
               <input
                 type="file"
-                accept=".csv"
+                accept=".xlsx,.xls,.csv"
                 required
                 onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-                className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-600 file:text-white hover:file:bg-brand-500 cursor-pointer"
+                className="w-full text-sm text-slate-400 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-600 file:text-white hover:file:bg-brand-500 cursor-pointer"
               />
 
               {importResult && (
@@ -719,16 +762,16 @@ export const ItemMaster: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setIsImportOpen(false)}
-                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold"
+                  className="px-4 py-2 bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold hover:bg-slate-700"
                 >
                   Close
                 </button>
                 <button
                   type="submit"
                   disabled={isImporting || !importFile}
-                  className="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold disabled:opacity-50"
+                  className="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold disabled:opacity-50 shadow-lg shadow-brand-600/30"
                 >
-                  {isImporting ? 'Processing CSV...' : 'Start Import'}
+                  {isImporting ? 'Processing File...' : 'Start Import'}
                 </button>
               </div>
             </form>
