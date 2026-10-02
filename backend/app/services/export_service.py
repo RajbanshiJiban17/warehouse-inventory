@@ -3,12 +3,12 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, List
 from fastapi.responses import StreamingResponse
-import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from reportlab.lib.pagesizes import letter, landscape
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+import openpyxl  # type: ignore
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side  # type: ignore
+from reportlab.lib.pagesizes import letter, landscape  # type: ignore
+from reportlab.lib import colors  # type: ignore
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle  # type: ignore
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle  # type: ignore
 
 
 def export_as_csv(filename: str, headers: List[str], rows: List[List[Any]]) -> StreamingResponse:
@@ -51,7 +51,7 @@ def export_as_excel(filename: str, title: str, headers: List[str], rows: List[Li
         cell.alignment = Alignment(horizontal="center", vertical="center")
 
     for r_idx, row in enumerate(rows, start=2):
-        formatted_row = []
+        formatted_row: List[Any] = []
         for val in row:
             if isinstance(val, Decimal):
                 formatted_row.append(float(val))

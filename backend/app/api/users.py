@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -24,7 +24,7 @@ from app.services.user_service import (
 router = APIRouter(prefix="/api/users", tags=["User Management"])
 
 
-@router.get("", response_model=dict)
+@router.get("", response_model=dict[str, Any])
 def get_users(
     role: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
@@ -33,7 +33,7 @@ def get_users(
     offset: int = Query(0, ge=0),
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     users, total = list_users(
         db=db,
         role=role,
@@ -130,14 +130,14 @@ def change_status(
     return user
 
 
-@router.post("/{user_id}/reset-password", response_model=dict)
+@router.post("/{user_id}/reset-password", response_model=dict[str, Any])
 def admin_reset_password(
     user_id: int,
     request_data: UserResetPasswordRequest,
     request: Request,
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
     reset_user_password(

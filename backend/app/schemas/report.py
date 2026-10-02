@@ -96,3 +96,22 @@ class UserActivityReportItem(BaseModel):
     stockOutCount: int
     stockOutTotalQuantity: Decimal
     totalOperations: int
+
+
+class BatchStockReportItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    itemId: int
+    itemCode: str
+    itemName: str
+    barcode: str
+    categoryName: str
+    unitName: str
+    batchNo: str
+    mfgDate: Optional[str] = None
+    expiryDate: Optional[str] = None
+    quantity: Decimal
+    unitPrice: Optional[Decimal] = Decimal("0.00")
+    supplierName: Optional[str] = None
+    status: str = "ACTIVE"

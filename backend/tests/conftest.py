@@ -1,5 +1,5 @@
 import pytest
-from typing import Generator
+from typing import Any, Generator
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 from fastapi.testclient import TestClient
@@ -20,7 +20,7 @@ test_engine = create_engine(
 
 # Enable foreign keys, check constraints, and WAL mode on SQLite connection
 @event.listens_for(test_engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
+def set_sqlite_pragma(dbapi_connection: Any, connection_record: Any) -> None:
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA foreign_keys=ON")
     cursor.execute("PRAGMA journal_mode=WAL")
@@ -61,7 +61,7 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
 
 
 @pytest.fixture(autouse=True)
-def reset_limiter():
+def reset_limiter() -> Generator[None, None, None]:
     limiter.reset()
     yield
     limiter.reset()

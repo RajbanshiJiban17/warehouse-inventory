@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -42,7 +42,7 @@ def stock_in(
     )
 
 
-@router.get("/in", response_model=dict)
+@router.get("/in", response_model=dict[str, Any])
 def get_stock_in_history(
     item_id: Optional[int] = Query(None),
     user_id: Optional[int] = Query(None),
@@ -52,7 +52,7 @@ def get_stock_in_history(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     entries, total = list_stock_in_entries(
         db=db,
         item_id=item_id,
@@ -88,7 +88,7 @@ def stock_out(
     )
 
 
-@router.get("/out", response_model=dict)
+@router.get("/out", response_model=dict[str, Any])
 def get_stock_out_history(
     item_id: Optional[int] = Query(None),
     user_id: Optional[int] = Query(None),
@@ -99,7 +99,7 @@ def get_stock_out_history(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     entries, total = list_stock_out_entries(
         db=db,
         item_id=item_id,
@@ -118,7 +118,7 @@ def get_stock_out_history(
     }
 
 
-@router.get("/movements", response_model=dict)
+@router.get("/movements", response_model=dict[str, Any])
 def get_stock_movements_ledger(
     item_id: Optional[int] = Query(None),
     type: Optional[str] = Query(None),
@@ -126,7 +126,7 @@ def get_stock_movements_ledger(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     movements, total = list_stock_movements(
         db=db,
         item_id=item_id,

@@ -7,7 +7,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.core.config import settings
 from app.core.logging import setup_logging, logger
-from app.core.database import Base, engine
+from app.core.database import Base, engine, ensure_database_schema
 from app.middleware.security import SecurityHeadersMiddleware, CSRFProtectionMiddleware
 from app.middleware.exceptions import register_exception_handlers
 from app.api.auth import router as auth_router, limiter
@@ -28,9 +28,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     setup_logging()
     logger.info("application_startup", app=settings.APP_NAME, env=settings.ENVIRONMENT)
 
-    # Initialize tables if SQLite development
-    if settings.is_sqlite:
-        Base.metadata.create_all(bind=engine)
+    # Initialize and synchronize tables/columns across SQLite, Postgres, or Hosting
+    ensure_database_schema(engine)
 
     # Automatically activate and grant ADMIN role to any existing pending users
     try:

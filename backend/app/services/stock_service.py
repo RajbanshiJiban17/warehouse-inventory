@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, update
 
 from app.models.item import Item
-from app.models.stock import StockIn, StockOut, StockMovement, MovementType
+from app.models.stock import StockIn, StockOut, StockMovement, MovementType, ItemBatch
 from app.models.user import User
 from app.models.audit import AuditAction
 from app.schemas.stock import (
@@ -29,10 +29,11 @@ def process_stock_in(
     """
     Executes Stock In transaction atomically with row-locking:
     1. Lock item row with with_for_update()
-    2. Insert StockIn
+    2. Insert StockIn with date, supplier, location, rate, amount, and batch info
     3. Increase Item.quantity
     4. Insert StockMovement ledger entry with exact balanceAfter
-    5. Record AuditLog
+    5. Maintain ItemBatch inventory if batchNo is provided
+    6. Record AuditLog
     """
     qty = Decimal(str(request.quantity))
     if qty <= 0:
@@ -69,15 +70,57 @@ def process_stock_in(
         )
 
     try:
+        # Calculate amount
+        u_price = Decimal(str(request.unitPrice or "0.00"))
+        calc_amount = Decimal(str(request.amount or "0.00"))
+        if calc_amount == Decimal("0.00") and u_price > 0:
+            calc_amount = qty * u_price
+
         # 2. Insert StockIn
         stock_in_entry = StockIn(
             itemId=item.id,
             quantity=qty,
             remark=request.remark,
+            dateAD=request.dateAD or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            dateBS=request.dateBS,
+            supplierName=request.supplierName,
+            receivedFrom=request.receivedFrom,
+            location=request.location or "Godown",
+            unitPrice=u_price,
+            amount=calc_amount,
+            batchNo=request.batchNo.strip() if request.batchNo else None,
+            mfgDate=request.mfgDate,
+            expiryDate=request.expiryDate,
             createdBy=user_id,
         )
         db.add(stock_in_entry)
         db.flush()
+
+        # Maintain ItemBatch if batchNo is provided
+        if request.batchNo and request.batchNo.strip():
+            b_no = request.batchNo.strip()
+            batch = db.query(ItemBatch).filter(ItemBatch.itemId == item.id, ItemBatch.batchNo == b_no).first()
+            if batch:
+                batch.quantity += qty
+                batch.initialQuantity += qty
+                if request.mfgDate:
+                    batch.mfgDate = request.mfgDate
+                if request.expiryDate:
+                    batch.expiryDate = request.expiryDate
+                if u_price > 0:
+                    batch.unitPrice = u_price
+            else:
+                batch = ItemBatch(
+                    itemId=item.id,
+                    batchNo=b_no,
+                    mfgDate=request.mfgDate,
+                    expiryDate=request.expiryDate,
+                    quantity=qty,
+                    initialQuantity=qty,
+                    unitPrice=u_price,
+                    supplierName=request.supplierName,
+                )
+                db.add(batch)
 
         # 3. Increase Item.quantity atomically
         stmt = (
@@ -112,6 +155,9 @@ def process_stock_in(
                 "itemId": item.id,
                 "itemCode": item.itemCode,
                 "quantity": str(qty),
+                "supplierName": stock_in_entry.supplierName,
+                "batchNo": stock_in_entry.batchNo,
+                "amount": str(calc_amount),
                 "balanceAfter": str(item.quantity),
             },
             ip=ip,
@@ -126,9 +172,20 @@ def process_stock_in(
             itemCode=item.itemCode,
             itemName=item.itemName,
             barcode=item.barcode,
+            unitName=item.unit.name if item.unit else "pcs",
             quantity=stock_in_entry.quantity,
             balanceAfter=item.quantity,
             remark=stock_in_entry.remark,
+            dateAD=stock_in_entry.dateAD,
+            dateBS=stock_in_entry.dateBS,
+            supplierName=stock_in_entry.supplierName,
+            receivedFrom=stock_in_entry.receivedFrom,
+            location=stock_in_entry.location,
+            unitPrice=stock_in_entry.unitPrice,
+            amount=stock_in_entry.amount,
+            batchNo=stock_in_entry.batchNo,
+            mfgDate=stock_in_entry.mfgDate,
+            expiryDate=stock_in_entry.expiryDate,
             createdAt=stock_in_entry.createdAt,
             createdByUsername=user.username if user else None,
         )
@@ -203,16 +260,35 @@ def process_stock_out(
     db.refresh(item)
 
     try:
+        # Calculate amount
+        u_price = Decimal(str(request.unitPrice or "0.00"))
+        calc_amount = Decimal(str(request.amount or "0.00"))
+        if calc_amount == Decimal("0.00") and u_price > 0:
+            calc_amount = qty * u_price
+
         # 3. Insert StockOut
         stock_out_entry = StockOut(
             itemId=item.id,
             quantity=qty,
             location=request.location.strip(),
             remark=request.remark,
+            dateAD=request.dateAD or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            dateBS=request.dateBS,
+            receiverName=request.receiverName,
+            unitPrice=u_price,
+            amount=calc_amount,
+            batchNo=request.batchNo.strip() if request.batchNo else None,
             createdBy=user_id,
         )
         db.add(stock_out_entry)
         db.flush()
+
+        # Deduct from ItemBatch if batchNo is provided
+        if request.batchNo and request.batchNo.strip():
+            b_no = request.batchNo.strip()
+            batch = db.query(ItemBatch).filter(ItemBatch.itemId == item.id, ItemBatch.batchNo == b_no).first()
+            if batch:
+                batch.quantity = max(Decimal("0.00"), batch.quantity - qty)
 
         # 4. Insert StockMovement ledger record
         ref_id = request.idempotencyKey or f"OUT_{stock_out_entry.id}"
@@ -242,6 +318,8 @@ def process_stock_out(
                 "itemCode": item.itemCode,
                 "quantity": str(qty),
                 "location": stock_out_entry.location,
+                "receiverName": stock_out_entry.receiverName,
+                "amount": str(calc_amount),
                 "balanceAfter": str(item.quantity),
                 "isLowStock": is_low_stock,
             },
@@ -257,11 +335,18 @@ def process_stock_out(
             itemCode=item.itemCode,
             itemName=item.itemName,
             barcode=item.barcode,
+            unitName=item.unit.name if item.unit else "pcs",
             quantity=stock_out_entry.quantity,
             location=stock_out_entry.location,
             balanceAfter=item.quantity,
             isLowStockWarning=is_low_stock,
             remark=stock_out_entry.remark,
+            dateAD=stock_out_entry.dateAD,
+            dateBS=stock_out_entry.dateBS,
+            receiverName=stock_out_entry.receiverName,
+            unitPrice=stock_out_entry.unitPrice,
+            amount=stock_out_entry.amount,
+            batchNo=stock_out_entry.batchNo,
             createdAt=stock_out_entry.createdAt,
             createdByUsername=user.username if user else None,
         )
@@ -303,9 +388,20 @@ def list_stock_in_entries(
                 itemCode=e.item.itemCode,
                 itemName=e.item.itemName,
                 barcode=e.item.barcode,
+                unitName=e.item.unit.name if e.item.unit else "pcs",
                 quantity=e.quantity,
                 balanceAfter=e.item.quantity,
                 remark=e.remark,
+                dateAD=e.dateAD,
+                dateBS=e.dateBS,
+                supplierName=e.supplierName,
+                receivedFrom=e.receivedFrom,
+                location=e.location,
+                unitPrice=e.unitPrice,
+                amount=e.amount,
+                batchNo=e.batchNo,
+                mfgDate=e.mfgDate,
+                expiryDate=e.expiryDate,
                 createdAt=e.createdAt,
                 createdByUsername=e.user.username if e.user else None,
             )
@@ -348,11 +444,18 @@ def list_stock_out_entries(
                 itemCode=e.item.itemCode,
                 itemName=e.item.itemName,
                 barcode=e.item.barcode,
+                unitName=e.item.unit.name if e.item.unit else "pcs",
                 quantity=e.quantity,
                 location=e.location,
                 balanceAfter=e.item.quantity,
                 isLowStockWarning=bool(e.item.quantity <= e.item.minStockLevel),
                 remark=e.remark,
+                dateAD=e.dateAD,
+                dateBS=e.dateBS,
+                receiverName=e.receiverName,
+                unitPrice=e.unitPrice,
+                amount=e.amount,
+                batchNo=e.batchNo,
                 createdAt=e.createdAt,
                 createdByUsername=e.user.username if e.user else None,
             )

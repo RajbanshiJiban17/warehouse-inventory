@@ -14,10 +14,39 @@ from app.services.report_service import (
     get_fast_slow_moving_report_data,
     get_dormant_items_report_data,
     get_user_activity_report_data,
+    get_batch_stock_report_data,
 )
 from app.services.export_service import export_as_csv, export_as_excel, export_as_pdf
 
 router = APIRouter(prefix="/api/reports", tags=["Analytical Reports"])
+
+
+@router.get("/batch-stock")
+def get_batch_stock_report(
+    category_id: Optional[int] = Query(None),
+    search: Optional[str] = Query(None),
+    format: str = Query("json", pattern="^(json|csv|xlsx|pdf)$"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Batch & Expiry Breakdown Report with MFG, Expire, Batch No, and Qty"""
+    data = get_batch_stock_report_data(db=db, category_id=category_id, search=search)
+
+    if format == "json":
+        return {"total": len(data), "items": [item.model_dump() for item in data]}
+
+    headers = ["S.N", "Item Name", "Item Code", "Barcode", "Batch No", "MFG Date", "Expiry Date", "Quantity", "Unit", "Status"]
+    rows = [
+        [idx + 1, i.itemName, i.itemCode, i.barcode, i.batchNo, i.mfgDate or "-", i.expiryDate or "-", i.quantity, i.unitName, i.status]
+        for idx, i in enumerate(data)
+    ]
+
+    if format == "csv":
+        return export_as_csv("batch_stock_report", headers, rows)
+    elif format == "xlsx":
+        return export_as_excel("batch_stock_report", "Batch & Expiry Stock Report", headers, rows)
+    else:
+        return export_as_pdf("batch_stock_report", "Batch & Expiry Stock Report", headers, rows)
 
 
 @router.get("/current-stock")

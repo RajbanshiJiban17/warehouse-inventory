@@ -12,6 +12,9 @@ import {
   FileSpreadsheet,
   CheckCircle2,
   Barcode,
+  RefreshCw,
+  Wand2,
+  ShieldAlert,
 } from 'lucide-react';
 import type { Item, Category, Unit } from '../types';
 import { api, getApiBase } from '../services/api';
@@ -40,6 +43,15 @@ export const ItemMaster: React.FC = () => {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+
+  // Code Generation Mode (Auto vs Manual)
+  const [isAutoCode, setIsAutoCode] = useState(true);
+  const [isFetchingCode, setIsFetchingCode] = useState(false);
+
+  // Secure Delete Confirmation Modal
+  const [deletingItem, setDeletingItem] = useState<Item | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -96,6 +108,24 @@ export const ItemMaster: React.FC = () => {
     fetchItems();
   }, [search, selectedCategory, lowStockOnly, page]);
 
+  const fetchNextCode = async () => {
+    setIsFetchingCode(true);
+    try {
+      const res = await api.getNextItemCode();
+      setFormData((prev) => ({ ...prev, itemCode: res.nextCode }));
+    } catch {
+      setFormData((prev) => ({ ...prev, itemCode: `ITM-${Date.now().toString().slice(-4)}` }));
+    } finally {
+      setIsFetchingCode(false);
+    }
+  };
+
+  const handleGenerateBarcode = () => {
+    // Generate a clean 12-digit EAN-style barcode format: 890 + 9 random digits
+    const randomDigits = Math.floor(100000000 + Math.random() * 900000000).toString();
+    setFormData((prev) => ({ ...prev, barcode: `890${randomDigits}` }));
+  };
+
   const resetForm = () => {
     setFormData({
       itemCode: '',
@@ -111,6 +141,8 @@ export const ItemMaster: React.FC = () => {
 
   const handleOpenCreate = () => {
     resetForm();
+    setIsAutoCode(true);
+    fetchNextCode();
     setIsCreateOpen(true);
   };
 
@@ -179,14 +211,31 @@ export const ItemMaster: React.FC = () => {
     }
   };
 
-  const handleDelete = async (item: Item) => {
-    if (!window.confirm(`Are you sure you want to delete ${item.itemName} (${item.itemCode})?`)) return;
+  const handleOpenDelete = (item: Item) => {
+    setDeletingItem(item);
+    setDeleteConfirmText('');
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingItem) return;
+    if (Number(deletingItem.quantity) > 0) {
+      showToast(
+        'error',
+        'Cannot Delete Active Stock',
+        `Item has ${deletingItem.quantity} ${deletingItem.unitName || 'units'} in inventory. Please issue or adjust to 0 first.`
+      );
+      return;
+    }
+    setIsDeleting(true);
     try {
-      await api.deleteItem(item.id);
-      showToast('info', 'Item Removed', `${item.itemName} has been archived.`);
+      await api.deleteItem(deletingItem.id);
+      showToast('info', 'Item Archived', `${deletingItem.itemName} (${deletingItem.itemCode}) has been safely archived.`);
+      setDeletingItem(null);
       fetchItems();
     } catch (err: any) {
-      showToast('error', 'Delete Failed', err.message);
+      showToast('error', 'Delete Failed', err.message || 'Could not archive item.');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -417,9 +466,9 @@ export const ItemMaster: React.FC = () => {
                         </button>
                         {isAdmin && (
                           <button
-                            onClick={() => handleDelete(item)}
+                            onClick={() => handleOpenDelete(item)}
                             className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-slate-900 rounded-lg transition"
-                            title="Soft Delete"
+                            title="Protected Soft Delete"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -475,41 +524,107 @@ export const ItemMaster: React.FC = () => {
             )}
 
             <form onSubmit={handleSaveCreate} className="mt-4 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">Item Code *</label>
+              {/* Code Mode Selector: Auto vs Manual */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300">
+                    Item Code (सामान कोड) *
+                  </label>
+                  <div className="flex bg-slate-900 border border-slate-800 rounded-lg p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAutoCode(true);
+                        fetchNextCode();
+                      }}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                        isAutoCode ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Auto Generate
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsAutoCode(false)}
+                      className={`px-2.5 py-1 rounded-md font-semibold transition ${
+                        !isAutoCode ? 'bg-brand-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Manual Input
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
                   <input
                     type="text"
                     required
-                    placeholder="e.g. ELEC-007"
+                    placeholder={isAutoCode ? 'Fetching next code...' : 'Enter manual item code (e.g. ELEC-007)'}
                     value={formData.itemCode}
                     onChange={(e) => setFormData({ ...formData, itemCode: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500 font-mono"
+                    readOnly={isAutoCode && isFetchingCode}
+                    className="flex-1 px-3 py-2 bg-slate-900 border border-slate-700/80 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-brand-500"
                   />
+                  {isAutoCode && (
+                    <button
+                      type="button"
+                      onClick={fetchNextCode}
+                      disabled={isFetchingCode}
+                      className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs flex items-center space-x-1 border border-slate-700 transition"
+                      title="Generate next code"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isFetchingCode ? 'animate-spin text-brand-400' : ''}`} />
+                      <span>Next</span>
+                    </button>
+                  )}
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-400 mb-1">Barcode (USB/Scan) *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 890100099"
-                    value={formData.barcode}
-                    onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500 font-mono"
-                  />
-                </div>
+                <p className="text-[11px] text-slate-400">
+                  {isAutoCode
+                    ? '✓ Automatically generates sequential code (ITM-0001, ITM-0002) from database sequence.'
+                    : '✎ Type manual custom SKU, part number, or code.'}
+                </p>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">Item Name *</label>
+              {/* Distinct Item Name */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3">
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  Item Name (सामानको पुरा नाम) *
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Ergonomic Office Mouse"
+                  placeholder="e.g. Basmati Rice 25kg / Ergonomic Office Mouse / LED Bulb 9W"
                   value={formData.itemName}
                   onChange={(e) => setFormData({ ...formData, itemName: e.target.value })}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700/80 rounded-xl text-white text-sm font-medium focus:outline-none focus:border-brand-500"
                 />
+              </div>
+
+              {/* Barcode with Auto Generator helper */}
+              <div className="bg-slate-950/70 border border-slate-800 rounded-xl p-3 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold text-slate-300">Item Barcode (बारकोड) *</label>
+                  <button
+                    type="button"
+                    onClick={handleGenerateBarcode}
+                    className="text-xs text-brand-400 hover:text-brand-300 flex items-center space-x-1 font-semibold"
+                    title="Generate barcode automatically"
+                  >
+                    <Wand2 className="w-3.5 h-3.5" />
+                    <span>Auto Generate Barcode</span>
+                  </button>
+                </div>
+                <div className="relative">
+                  <Barcode className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="Scan with USB reader or enter barcode..."
+                    value={formData.barcode}
+                    onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700/80 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-brand-500"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -775,6 +890,91 @@ export const ItemMaster: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* SECURE DELETE PROTECTION MODAL */}
+      {deletingItem && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="flex items-center space-x-3 pb-3 border-b border-slate-800">
+              <div className="p-2.5 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-xl">
+                <ShieldAlert className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Item Deletion Protection</h3>
+                <p className="text-xs text-slate-400">Database stock & ledger integrity check</p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-3">
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1 text-xs">
+                <div className="flex justify-between text-slate-400">
+                  <span>Item Name:</span>
+                  <span className="font-semibold text-white">{deletingItem.itemName}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Item Code:</span>
+                  <span className="font-mono text-brand-400">{deletingItem.itemCode}</span>
+                </div>
+                <div className="flex justify-between text-slate-400">
+                  <span>Current Inventory Stock:</span>
+                  <span className={`font-bold text-sm ${Number(deletingItem.quantity) > 0 ? 'text-amber-400' : 'text-slate-400'}`}>
+                    {Number(deletingItem.quantity).toLocaleString()} {deletingItem.unitName || 'units'}
+                  </span>
+                </div>
+              </div>
+
+              {Number(deletingItem.quantity) > 0 ? (
+                <div className="p-3.5 bg-rose-950/80 border border-rose-800 rounded-xl text-rose-200 text-xs space-y-1.5">
+                  <div className="font-bold flex items-center space-x-1.5 text-rose-300">
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    <span>Deletion Blocked by System</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-rose-200">
+                    This item currently has positive stock in the warehouse ({deletingItem.quantity} {deletingItem.unitName || 'units'}). Deleting active goods causes financial & stock ledger reconciliation mismatch. Please issue or adjust stock to <strong>0</strong> first.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-slate-300">
+                    Stock is 0. To protect against accidental deletions, please type the item code{' '}
+                    <strong className="text-brand-400 font-mono">{deletingItem.itemCode}</strong> or{' '}
+                    <strong className="text-rose-400 font-mono">DELETE</strong> below:
+                  </p>
+                  <input
+                    type="text"
+                    placeholder={`Type ${deletingItem.itemCode} or DELETE...`}
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-rose-500"
+                  />
+                </div>
+              )}
+            </div>
+
+            <div className="mt-5 flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setDeletingItem(null)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={
+                  isDeleting ||
+                  Number(deletingItem.quantity) > 0 ||
+                  (deleteConfirmText.trim() !== deletingItem.itemCode && deleteConfirmText.trim().toUpperCase() !== 'DELETE')
+                }
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition shadow-lg shadow-rose-600/30"
+              >
+                {isDeleting ? 'Archiving...' : 'Confirm Delete / Archive'}
+              </button>
+            </div>
           </div>
         </div>
       )}

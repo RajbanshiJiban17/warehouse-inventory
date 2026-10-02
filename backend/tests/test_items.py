@@ -145,9 +145,21 @@ def test_item_update_and_soft_delete(client: TestClient, auth_admin_token: str, 
     assert update_res.status_code == 200
     assert update_res.json()["itemName"] == "Renamed Item"
 
-    # Soft delete item (admin only)
+    # Soft delete item should fail with 400 when stock is positive
     del_res = client.delete(f"/api/items/{item_id}", headers=headers)
-    assert del_res.status_code == 204
+    assert del_res.status_code == 400
+    assert "Security Validation" in del_res.json()["detail"]
+
+    # Issue out all remaining stock so balance reaches 0
+    client.post(
+        "/api/stock/out",
+        headers=headers,
+        json={"itemId": item_id, "quantity": "10.00", "location": "Floor"},
+    )
+
+    # Now soft delete item succeeds with 204
+    del_res_success = client.delete(f"/api/items/{item_id}", headers=headers)
+    assert del_res_success.status_code == 204
 
     # Deleted item should not be found via barcode scanner
     scanned = client.get(f"/api/items/barcode/DEL_BARCODE", headers=headers)

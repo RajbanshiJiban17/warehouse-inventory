@@ -7,7 +7,7 @@ from sqlalchemy import func, desc, or_, case
 from app.models.item import Item
 from app.models.category import Category
 from app.models.unit import Unit
-from app.models.stock import StockIn, StockOut, StockMovement, MovementType
+from app.models.stock import StockIn, StockOut, StockMovement, MovementType, ItemBatch
 from app.models.user import User
 from app.schemas.report import (
     DashboardStatsResponse,
@@ -21,6 +21,7 @@ from app.schemas.report import (
     FastSlowMovingItem,
     DormantItem,
     UserActivityReportItem,
+    BatchStockReportItem,
 )
 
 
@@ -402,3 +403,67 @@ def get_user_activity_report_data(
         )
 
     return sorted(report, key=lambda x: x.totalOperations, reverse=True)
+
+
+def get_batch_stock_report_data(
+    db: Session,
+    category_id: Optional[int] = None,
+    search: Optional[str] = None,
+) -> List[BatchStockReportItem]:
+    query = (
+        db.query(ItemBatch, Item)
+        .join(Item, ItemBatch.itemId == Item.id)
+        .outerjoin(Category, Item.categoryId == Category.id)
+        .outerjoin(Unit, Item.unitId == Unit.id)
+        .filter(Item.isActive == True, ItemBatch.quantity > 0)
+    )
+
+    if category_id:
+        query = query.filter(Item.categoryId == category_id)
+
+    if search:
+        search_fmt = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                Item.itemName.ilike(search_fmt),
+                Item.itemCode.ilike(search_fmt),
+                Item.barcode.ilike(search_fmt),
+                ItemBatch.batchNo.ilike(search_fmt),
+            )
+        )
+
+    batches = query.order_by(Item.itemName.asc(), ItemBatch.batchNo.asc()).all()
+    results = []
+
+    for batch, item in batches:
+        status_val = "ACTIVE"
+        if batch.expiryDate:
+            try:
+                exp_dt = datetime.strptime(batch.expiryDate, "%Y-%m-%d").date()
+                curr_dt = datetime.now(timezone.utc).date()
+                if exp_dt < curr_dt:
+                    status_val = "EXPIRED"
+                elif (exp_dt - curr_dt).days <= 30:
+                    status_val = "EXPIRING_SOON"
+            except Exception:
+                pass
+
+        results.append(
+            BatchStockReportItem(
+                id=batch.id,
+                itemId=item.id,
+                itemCode=item.itemCode,
+                itemName=item.itemName,
+                barcode=item.barcode,
+                categoryName=item.category.name if item.category else "",
+                unitName=item.unit.name if item.unit else "pcs",
+                batchNo=batch.batchNo,
+                mfgDate=batch.mfgDate,
+                expiryDate=batch.expiryDate,
+                quantity=batch.quantity,
+                unitPrice=batch.unitPrice or Decimal("0.00"),
+                supplierName=batch.supplierName,
+                status=status_val,
+            )
+        )
+    return results

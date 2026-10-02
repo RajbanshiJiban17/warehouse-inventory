@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, Cookie, Depends, Header, Request, Response, status
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -77,7 +77,7 @@ def login(
     request: Request,
     response: Response,
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
     user, access_token, raw_refresh_token = authenticate_user(
@@ -111,7 +111,7 @@ def refresh(
     refresh_token: Optional[str] = Cookie(None),
     x_refresh_token: Optional[str] = Header(None),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     token = x_refresh_token or refresh_token
     if not token:
         return Response(status_code=status.HTTP_401_UNAUTHORIZED, content="Refresh token required")
@@ -146,7 +146,7 @@ def logout(
     x_refresh_token: Optional[str] = Header(None),
     current_user: Optional[User] = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     token = x_refresh_token or refresh_token
     ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
@@ -166,7 +166,7 @@ def change_my_password(
     request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     from fastapi import HTTPException
     if not verify_password(request_data.currentPassword, current_user.passwordHash):
         raise HTTPException(

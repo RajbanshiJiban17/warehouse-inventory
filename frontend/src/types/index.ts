@@ -58,8 +58,19 @@ export interface StockInResponse {
   itemName: string;
   barcode: string;
   quantity: string | number;
+  unitName?: string;
   balanceAfter: string | number;
   remark?: string;
+  dateAD?: string;
+  dateBS?: string;
+  supplierName?: string;
+  receivedFrom?: string;
+  location?: string;
+  unitPrice?: string | number;
+  amount?: string | number;
+  batchNo?: string;
+  mfgDate?: string;
+  expiryDate?: string;
   createdAt: string;
   createdByUsername?: string;
 }
@@ -71,12 +82,36 @@ export interface StockOutResponse {
   itemName: string;
   barcode: string;
   quantity: string | number;
+  unitName?: string;
   location: string;
   balanceAfter: string | number;
   isLowStockWarning: boolean;
   remark?: string;
+  dateAD?: string;
+  dateBS?: string;
+  receiverName?: string;
+  unitPrice?: string | number;
+  amount?: string | number;
+  batchNo?: string;
   createdAt: string;
   createdByUsername?: string;
+}
+
+export interface BatchStockItem {
+  id: number;
+  itemId: number;
+  itemCode: string;
+  itemName: string;
+  barcode: string;
+  categoryName?: string;
+  unitName?: string;
+  batchNo: string;
+  mfgDate?: string;
+  expiryDate?: string;
+  quantity: string | number;
+  unitPrice?: string | number;
+  supplierName?: string;
+  status: string;
 }
 
 export interface StockMovement {

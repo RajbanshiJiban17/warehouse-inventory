@@ -7,13 +7,18 @@ import {
   Printer,
   CheckCircle2,
   Search,
+  Layers,
+  Calendar,
+  AlertTriangle,
+  Clock,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { useToast } from '../components/Toast';
+import type { BatchStockItem } from '../types';
 
 type ReportTab =
-  | 'current-stock'
   | 'stock-ledger'
+  | 'current-stock'
   | 'low-stock'
   | 'location-stock'
   | 'fast-slow-moving'
@@ -22,8 +27,11 @@ type ReportTab =
 
 export const Reports: React.FC = () => {
   const { showToast } = useToast();
+  // Batch Breakdown switch: 'no' | 'yes'
+  const [batchMode, setBatchMode] = useState<'no' | 'yes'>('no');
   const [activeTab, setActiveTab] = useState<ReportTab>('stock-ledger');
   const [reportData, setReportData] = useState<any[]>([]);
+  const [batchData, setBatchData] = useState<BatchStockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
 
@@ -40,8 +48,13 @@ export const Reports: React.FC = () => {
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const res = await api.getReport(activeTab, { search: search || undefined });
-      setReportData(res.items || []);
+      if (batchMode === 'yes') {
+        const res = await api.getReport('batch-stock', { search: search || undefined });
+        setBatchData(res.items || []);
+      } else {
+        const res = await api.getReport(activeTab, { search: search || undefined });
+        setReportData(res.items || []);
+      }
     } catch (e: any) {
       showToast('error', 'Error Loading Report', e.message);
     } finally {
@@ -51,11 +64,25 @@ export const Reports: React.FC = () => {
 
   useEffect(() => {
     fetchReport();
-  }, [activeTab, search]);
+  }, [batchMode, activeTab, search]);
 
   const handleExport = (format: 'csv' | 'xlsx' | 'pdf') => {
-    const url = api.getReportExportUrl(activeTab, format, { search: search || undefined });
+    const reportName = batchMode === 'yes' ? 'batch-stock' : activeTab;
+    const url = api.getReportExportUrl(reportName, format, { search: search || undefined });
     window.open(url, '_blank');
+  };
+
+  const isExpired = (expiryDate?: string) => {
+    if (!expiryDate) return false;
+    return new Date(expiryDate) < new Date();
+  };
+
+  const isExpiringSoon = (expiryDate?: string) => {
+    if (!expiryDate) return false;
+    const exp = new Date(expiryDate).getTime();
+    const now = new Date().getTime();
+    const days30 = 30 * 24 * 60 * 60 * 1000;
+    return exp > now && exp - now <= days30;
   };
 
   return (
@@ -68,7 +95,7 @@ export const Reports: React.FC = () => {
             <span>Analytical Reports & Stock Ledger</span>
           </h1>
           <p className="text-sm text-slate-400 mt-1">
-            Mathematical reconciliations (Opening + In - Out = Closing) and multi-format exports.
+            Mathematical reconciliations, batch breakdown & multi-format exports.
           </p>
         </div>
 
@@ -105,33 +132,84 @@ export const Reports: React.FC = () => {
         </div>
       </div>
 
-      {/* Tabs Navigation */}
-      <div className="flex overflow-x-auto space-x-2 border-b border-slate-800 pb-2">
-        {tabs.map((tab) => (
+      {/* Mode Selector: Batch Breakdown (Yes / No) */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-slate-900/70 p-3 rounded-2xl border border-slate-800">
+        <div className="flex items-center space-x-3">
+          <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400">
+            <Layers className="w-5 h-5" />
+          </div>
+          <div>
+            <div className="text-sm font-semibold text-white">Batch Breakdown View</div>
+            <div className="text-xs text-slate-400">View inventory segregated by Batch No, MFG & Expire dates</div>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <span className="text-xs font-semibold px-2 text-slate-400">Batch Details:</span>
           <button
-            key={tab.id}
+            type="button"
             onClick={() => {
-              setActiveTab(tab.id as ReportTab);
+              setBatchMode('no');
               setSearch('');
             }}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
-              activeTab === tab.id
-                ? 'bg-brand-600 text-white shadow-md shadow-brand-600/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+              batchMode === 'no'
+                ? 'bg-slate-700 text-white shadow'
+                : 'text-slate-400 hover:text-white'
             }`}
           >
-            {tab.label}
+            No (Standard)
           </button>
-        ))}
+          <button
+            type="button"
+            onClick={() => {
+              setBatchMode('yes');
+              setSearch('');
+            }}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition ${
+              batchMode === 'yes'
+                ? 'bg-brand-600 text-white shadow shadow-brand-600/30'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            Yes (Batch Wise)
+          </button>
+        </div>
       </div>
 
+      {/* Tabs Navigation (Shown only when Batch Mode is 'no') */}
+      {batchMode === 'no' ? (
+        <div className="flex overflow-x-auto space-x-2 border-b border-slate-800 pb-2">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id as ReportTab);
+                setSearch('');
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition ${
+                activeTab === tab.id
+                  ? 'bg-brand-600 text-white shadow-md shadow-brand-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       {/* Search Filter Bar */}
-      {activeTab === 'current-stock' && (
+      {(batchMode === 'yes' || activeTab === 'current-stock') && (
         <div className="relative max-w-md">
           <Search className="w-4 h-4 absolute left-3.5 top-3 text-slate-400" />
           <input
             type="text"
-            placeholder="Search report items..."
+            placeholder={
+              batchMode === 'yes'
+                ? 'Search by Item Name, Code, Barcode, or Batch No...'
+                : 'Search report items...'
+            }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
@@ -142,7 +220,127 @@ export const Reports: React.FC = () => {
       {/* Report Tables Container */}
       <div className="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
         <div className="overflow-x-auto">
-          {activeTab === 'stock-ledger' && (
+          {/* BATCH BREAKDOWN TABLE (When batchMode === 'yes') */}
+          {batchMode === 'yes' && (
+            <table className="w-full text-left text-sm text-slate-300">
+              <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
+                <tr>
+                  <th className="px-4 py-3.5 text-center w-16">S.N</th>
+                  <th className="px-6 py-3.5">Item Name & Code</th>
+                  <th className="px-4 py-3.5">Barcode</th>
+                  <th className="px-4 py-3.5">Batch No</th>
+                  <th className="px-4 py-3.5">MFG Date</th>
+                  <th className="px-4 py-3.5">Expire Date</th>
+                  <th className="px-4 py-3.5 text-right">Quantity</th>
+                  <th className="px-4 py-3.5">Unit</th>
+                  <th className="px-4 py-3.5 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-mono text-xs">
+                {loading ? (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-12 text-center text-slate-500 font-sans">
+                      Loading batch details and expiry records...
+                    </td>
+                  </tr>
+                ) : batchData.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-12 text-center text-slate-500 font-sans">
+                      No batch stock records found. When items are stocked in with Batch numbers, they will appear here.
+                    </td>
+                  </tr>
+                ) : (
+                  batchData.map((row, idx) => {
+                    const expired = isExpired(row.expiryDate);
+                    const soon = isExpiringSoon(row.expiryDate);
+
+                    return (
+                      <tr key={row.id || idx} className="hover:bg-slate-900/50 transition">
+                        {/* 1 2 3... S.N */}
+                        <td className="px-4 py-4 text-center text-slate-400 font-bold">
+                          {idx + 1}
+                        </td>
+                        <td className="px-6 py-4 font-sans">
+                          <div className="font-semibold text-white text-sm">{row.itemName}</div>
+                          <div className="text-xs text-brand-400 font-mono">{row.itemCode}</div>
+                          {row.supplierName && (
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                              Supplier: {row.supplierName}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-slate-300 font-mono">
+                          {row.barcode || '-'}
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-brand-950/80 text-brand-300 border border-brand-800/60 font-mono">
+                            {row.batchNo}
+                          </span>
+                        </td>
+                        <td className="px-4 py-4 font-sans text-slate-300">
+                          {row.mfgDate ? (
+                            <div className="flex items-center space-x-1">
+                              <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                              <span>{row.mfgDate}</span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-600">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 font-sans">
+                          {row.expiryDate ? (
+                            <div
+                              className={`flex items-center space-x-1.5 px-2 py-0.5 rounded-lg text-xs font-semibold ${
+                                expired
+                                  ? 'bg-rose-950/80 text-rose-300 border border-rose-800/60'
+                                  : soon
+                                  ? 'bg-amber-950/80 text-amber-300 border border-amber-800/60'
+                                  : 'text-slate-300'
+                              }`}
+                            >
+                              {expired ? (
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                              ) : soon ? (
+                                <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              ) : (
+                                <Calendar className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              )}
+                              <span>{row.expiryDate}</span>
+                              {expired && <span className="text-[10px] font-bold uppercase">(Expired)</span>}
+                              {soon && <span className="text-[10px] font-bold uppercase">(Near Exp)</span>}
+                            </div>
+                          ) : (
+                            <span className="text-slate-600 font-mono">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-4 text-right font-bold text-white text-sm">
+                          {Number(row.quantity).toLocaleString()}
+                        </td>
+                        <td className="px-4 py-4 font-sans text-slate-400 text-xs">
+                          {row.unitName || 'Units'}
+                        </td>
+                        <td className="px-4 py-4 text-center font-sans">
+                          {row.status === 'ACTIVE' ? (
+                            <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-800">
+                              <CheckCircle2 className="w-3 h-3" />
+                              <span>ACTIVE</span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-900 text-slate-400 border border-slate-700">
+                              <span>DEPLETED</span>
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          )}
+
+          {/* STANDARD REPORTS (When batchMode === 'no') */}
+          {batchMode === 'no' && activeTab === 'stock-ledger' && (
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
                 <tr>
@@ -199,7 +397,7 @@ export const Reports: React.FC = () => {
             </table>
           )}
 
-          {activeTab === 'current-stock' && (
+          {batchMode === 'no' && activeTab === 'current-stock' && (
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
                 <tr>
@@ -243,7 +441,7 @@ export const Reports: React.FC = () => {
             </table>
           )}
 
-          {activeTab === 'low-stock' && (
+          {batchMode === 'no' && activeTab === 'low-stock' && (
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
                 <tr>
@@ -278,7 +476,7 @@ export const Reports: React.FC = () => {
             </table>
           )}
 
-          {activeTab === 'location-stock' && (
+          {batchMode === 'no' && activeTab === 'location-stock' && (
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
                 <tr>
@@ -301,7 +499,7 @@ export const Reports: React.FC = () => {
             </table>
           )}
 
-          {activeTab === 'fast-slow-moving' && (
+          {batchMode === 'no' && activeTab === 'fast-slow-moving' && (
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
                 <tr>
@@ -342,7 +540,7 @@ export const Reports: React.FC = () => {
             </table>
           )}
 
-          {activeTab === 'dormant-items' && (
+          {batchMode === 'no' && activeTab === 'dormant-items' && (
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
                 <tr>
@@ -373,7 +571,7 @@ export const Reports: React.FC = () => {
             </table>
           )}
 
-          {activeTab === 'user-activity' && (
+          {batchMode === 'no' && activeTab === 'user-activity' && (
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
                 <tr>

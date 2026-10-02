@@ -1,7 +1,7 @@
 import csv
 import io
 from decimal import Decimal
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -107,6 +107,29 @@ def get_item_by_code(db: Session, item_code: str) -> ItemResponse:
     return serialize_item_response(item)
 
 
+def get_next_item_code(db: Session) -> str:
+    """Generates the next sequential item code, e.g. ITM-0001, ITM-0002."""
+    items = db.query(Item.itemCode).all()
+    max_num = 0
+    for (code,) in items:
+        if code and code.startswith("ITM-"):
+            num_part = code.replace("ITM-", "")
+            if num_part.isdigit():
+                max_num = max(max_num, int(num_part))
+    if max_num > 0:
+        candidate = f"ITM-{max_num + 1:04d}"
+    else:
+        count = db.query(Item).count()
+        candidate = f"ITM-{count + 1:04d}"
+
+    # Ensure uniqueness
+    counter = max_num + 1 if max_num > 0 else count + 1
+    while db.query(Item).filter(Item.itemCode == candidate).first():
+        counter += 1
+        candidate = f"ITM-{counter:04d}"
+    return candidate
+
+
 def create_item(
     db: Session,
     user_id: int,
@@ -114,6 +137,13 @@ def create_item(
     ip: Optional[str] = None,
     user_agent: Optional[str] = None,
 ) -> ItemResponse:
+    # Auto-generate itemCode if not supplied or set to AUTO
+    code_val = (request.itemCode or "").strip()
+    if not code_val or code_val.upper() in ("AUTO", "AUTOMATIC", "AUTO-GENERATE"):
+        request.itemCode = get_next_item_code(db)
+    else:
+        request.itemCode = code_val
+
     # 1. Uniqueness checks with clear error messages
     existing_code = db.query(Item).filter(Item.itemCode == request.itemCode.strip()).first()
     if existing_code:
@@ -259,8 +289,17 @@ def soft_delete_item(
     ip: Optional[str] = None,
     user_agent: Optional[str] = None,
 ) -> None:
-    """Soft-delete item (admin only). Preserves all historical stock and ledger records."""
+    """Soft-delete item (admin only). Strict validation prevents deleting items with active stock."""
     item = get_item_by_id(db, item_id)
+
+    # Security validation: Do not allow deleting items that have positive stock in warehouse
+    if item.quantity > 0:
+        unit_str = item.unit.name if item.unit else "units"
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Security Validation: Cannot delete '{item.itemName}' because it currently has {item.quantity} {unit_str} in warehouse stock. Please dispatch, transfer, or adjust stock to 0 before deleting.",
+        )
+
     item.isActive = False
 
     log_audit_event(
@@ -334,7 +373,7 @@ def import_items_from_file(
     names, and bulk-imports items into the database. Auto-generates barcodes and codes if omitted.
     """
     filename_lower = filename.lower()
-    raw_rows: List[dict] = []
+    raw_rows: List[Dict[str, Any]] = []
     known_keys = {"itemName", "itemCode", "sn", "barcode", "categoryName", "unitName", "openingQuantity", "minStockLevel"}
 
     if filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls"):

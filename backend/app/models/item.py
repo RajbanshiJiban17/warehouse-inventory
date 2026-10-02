@@ -40,3 +40,4 @@ class Item(Base):
     stock_ins = relationship("StockIn", back_populates="item", cascade="all, delete-orphan")
     stock_outs = relationship("StockOut", back_populates="item", cascade="all, delete-orphan")
     movements = relationship("StockMovement", back_populates="item", cascade="all, delete-orphan")
+    batches = relationship("ItemBatch", back_populates="item", cascade="all, delete-orphan")

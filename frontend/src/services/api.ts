@@ -140,6 +140,9 @@ export const api = {
   lookupItemCode: (code: string) =>
     request<any>(`/items/code/${encodeURIComponent(code)}`),
 
+  getNextItemCode: () =>
+    request<{ nextCode: string }>('/items/next-code'),
+
   createItem: (payload: any) =>
     request<any>('/items', { method: 'POST', body: JSON.stringify(payload) }),
 
@@ -165,8 +168,23 @@ export const api = {
     `${getApiBase()}/items/import/template?format=${format}`,
 
   // Stock
-  stockIn: (payload: { itemId?: number; barcode?: string; quantity: number | string; remark?: string; idempotencyKey?: string }) =>
-    request<any>('/stock/in', { method: 'POST', body: JSON.stringify(payload) }),
+  stockIn: (payload: {
+    itemId?: number;
+    barcode?: string;
+    quantity: number | string;
+    remark?: string;
+    dateAD?: string;
+    dateBS?: string;
+    supplierName?: string;
+    receivedFrom?: string;
+    location?: string;
+    unitPrice?: number | string;
+    amount?: number | string;
+    batchNo?: string;
+    mfgDate?: string;
+    expiryDate?: string;
+    idempotencyKey?: string;
+  }) => request<any>('/stock/in', { method: 'POST', body: JSON.stringify(payload) }),
 
   getStockInHistory: (params: Record<string, any> = {}) => {
     const query = new URLSearchParams();
@@ -176,8 +194,20 @@ export const api = {
     return request<{ total: number; items: any[] }>(`/stock/in?${query.toString()}`);
   },
 
-  stockOut: (payload: { itemId?: number; barcode?: string; quantity: number | string; location: string; remark?: string; idempotencyKey?: string }) =>
-    request<any>('/stock/out', { method: 'POST', body: JSON.stringify(payload) }),
+  stockOut: (payload: {
+    itemId?: number;
+    barcode?: string;
+    quantity: number | string;
+    location: string;
+    remark?: string;
+    dateAD?: string;
+    dateBS?: string;
+    receiverName?: string;
+    unitPrice?: number | string;
+    amount?: number | string;
+    batchNo?: string;
+    idempotencyKey?: string;
+  }) => request<any>('/stock/out', { method: 'POST', body: JSON.stringify(payload) }),
 
   getStockOutHistory: (params: Record<string, any> = {}) => {
     const query = new URLSearchParams();

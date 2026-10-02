@@ -5,7 +5,7 @@ from app.models.category import Category
 from app.models.unit import Unit
 from app.models.location import Location
 from app.models.item import Item
-from app.models.stock import StockIn, StockOut, StockMovement, MovementType
+from app.models.stock import StockIn, StockOut, StockMovement, MovementType, ItemBatch
 from app.models.audit import AuditLog, AuditAction
 
 __all__ = [
@@ -22,6 +22,7 @@ __all__ = [
     "StockOut",
     "StockMovement",
     "MovementType",
+    "ItemBatch",
     "AuditLog",
     "AuditAction",
 ]

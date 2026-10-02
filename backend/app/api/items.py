@@ -1,9 +1,9 @@
 import csv
 import io
-from typing import Optional
+from typing import Any, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
-import openpyxl
+import openpyxl  # type: ignore
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -30,7 +30,7 @@ from app.services.item_service import (
 router = APIRouter(prefix="/api/items", tags=["Item Master"])
 
 
-@router.get("", response_model=dict)
+@router.get("", response_model=dict[str, Any])
 def get_items_list(
     search: Optional[str] = Query(None),
     category_id: Optional[int] = Query(None),
@@ -42,7 +42,7 @@ def get_items_list(
     offset: int = Query(0, ge=0),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-) -> dict:
+) -> dict[str, Any]:
     items, total = list_items(
         db=db,
         search=search,
@@ -78,6 +78,15 @@ def register_item(
         ip=ip,
         user_agent=user_agent,
     )
+
+
+@router.get("/next-code")
+def fetch_next_code(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    from app.services.item_service import get_next_item_code
+    return {"nextCode": get_next_item_code(db)}
 
 
 @router.get("/barcode/{barcode}", response_model=ItemResponse)
@@ -162,7 +171,7 @@ from app.services.item_service import (
 def download_import_template(
     format: str = Query("xlsx", pattern="^(xlsx|csv)$"),
     current_user: User = Depends(get_current_user),
-):
+) -> StreamingResponse:
     """Provides a sample spreadsheet template for bulk item importing"""
     headers = [
         "Item Code",
@@ -208,8 +217,8 @@ def download_import_template(
 
 @router.post("/import", response_model=ItemImportResult)
 async def bulk_import_items(
+    request: Request,
     file: UploadFile = File(...),
-    request: Request = None,
     current_admin: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ) -> ItemImportResult:
@@ -238,7 +247,7 @@ def export_items(
     format: str = Query("csv", pattern="^(csv|xlsx)$"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
-):
+) -> StreamingResponse:
     items, _ = list_items(db=db, limit=10000, offset=0)
 
     if format == "csv":

@@ -6,6 +6,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal
+from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
@@ -14,7 +15,7 @@ from app.models.stock import StockMovement, MovementType
 
 
 @pytest.fixture
-def auth_headers(client: TestClient) -> dict:
+def auth_headers(client: TestClient) -> dict[str, str]:
     client.post(
         "/api/auth/register",
         json={"username": "stock_operator", "email": "operator@example.com", "password": "SuperPass@2026"},
@@ -28,7 +29,7 @@ def auth_headers(client: TestClient) -> dict:
 
 
 @pytest.fixture
-def test_stock_item(client: TestClient, auth_headers: dict) -> int:
+def test_stock_item(client: TestClient, auth_headers: dict[str, str]) -> int:
     # Setup Category, Unit, Item
     cat = client.post("/api/categories", headers=auth_headers, json={"name": "Beverages"}).json()
     unit = client.post("/api/units", headers=auth_headers, json={"name": "box", "allowDecimals": False}).json()
@@ -49,7 +50,7 @@ def test_stock_item(client: TestClient, auth_headers: dict) -> int:
     return item["id"]
 
 
-def test_stock_in_increases_quantity_and_records_ledger(client: TestClient, auth_headers: dict, test_stock_item: int) -> None:
+def test_stock_in_increases_quantity_and_records_ledger(client: TestClient, auth_headers: dict[str, str], test_stock_item: int) -> None:
     item_id = test_stock_item
 
     # Stock In 15 boxes
@@ -80,7 +81,7 @@ def test_stock_in_increases_quantity_and_records_ledger(client: TestClient, auth
     assert latest_mov["balanceAfter"] == "35.00"
 
 
-def test_stock_out_automatic_deduction_and_insufficient_stock(client: TestClient, auth_headers: dict, test_stock_item: int) -> None:
+def test_stock_out_automatic_deduction_and_insufficient_stock(client: TestClient, auth_headers: dict[str, str], test_stock_item: int) -> None:
     item_id = test_stock_item
 
     # Current stock is 20.00
@@ -122,7 +123,7 @@ def test_stock_out_automatic_deduction_and_insufficient_stock(client: TestClient
     assert item_check["isLowStock"] is True
 
 
-def test_concurrency_simultaneous_stock_outs_prevent_overselling(client: TestClient, auth_headers: dict) -> None:
+def test_concurrency_simultaneous_stock_outs_prevent_overselling(client: TestClient, auth_headers: dict[str, str]) -> None:
     """
     Race condition / concurrency test:
     Item has 10 units in stock.
@@ -150,7 +151,7 @@ def test_concurrency_simultaneous_stock_outs_prevent_overselling(client: TestCli
     ).json()
     item_id = item["id"]
 
-    def perform_stock_out():
+    def perform_stock_out() -> Any:
         return client.post(
             "/api/stock/out",
             headers=auth_headers,
