@@ -14,6 +14,7 @@ import {
   Warehouse,
   Settings,
   Server,
+  KeyRound,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from './Toast';
@@ -28,6 +29,43 @@ export const Layout: React.FC = () => {
   const [serverUrlInput, setServerUrlInput] = useState('');
   const [healthStatus, setHealthStatus] = useState<'checking' | 'healthy' | 'error'>('checking');
   const isElectron = typeof window !== 'undefined' && !!window.electronAPI;
+
+  // Change Password state
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+
+    if (newPassword !== confirmPassword) {
+      setPasswordError('New password and confirm password do not match.');
+      return;
+    }
+
+    if (newPassword.length < 10) {
+      setPasswordError('New password must be at least 10 characters long.');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      await api.changePassword({ currentPassword, newPassword });
+      showToast('success', 'Password Changed', 'Your password was updated successfully.');
+      setChangePasswordOpen(false);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err: any) {
+      setPasswordError(err.message || 'Failed to change password. Please check your current password.');
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   const checkBackendHealth = async () => {
     setHealthStatus('checking');
@@ -144,13 +182,22 @@ export const Layout: React.FC = () => {
                 <span className="text-[10px] uppercase font-bold text-slate-400">{user?.role}</span>
               </div>
             </div>
-            <button
-              onClick={handleLogout}
-              title="Logout"
-              className="p-2 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            <div className="flex items-center space-x-1">
+              <button
+                onClick={() => setChangePasswordOpen(true)}
+                title="Change Password"
+                className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition"
+              >
+                <KeyRound className="w-4 h-4" />
+              </button>
+              <button
+                onClick={handleLogout}
+                title="Logout"
+                className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -191,6 +238,15 @@ export const Layout: React.FC = () => {
                 Desktop App
               </span>
             )}
+
+            <button
+              onClick={() => setChangePasswordOpen(true)}
+              className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-slate-800 rounded-lg transition flex items-center space-x-1.5"
+              title="Change Password"
+            >
+              <KeyRound className="w-4 h-4" />
+              <span className="hidden xl:inline text-xs font-medium">Password</span>
+            </button>
 
             <button
               onClick={handleOpenSettings}
@@ -326,6 +382,103 @@ export const Layout: React.FC = () => {
                       Save & Reconnect
                     </button>
                   </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {changePasswordOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-scale-up">
+            <div className="p-6">
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-slate-800">
+                <div className="flex items-center space-x-2.5">
+                  <div className="p-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400">
+                    <KeyRound className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">Change Account Password</h3>
+                    <p className="text-xs text-slate-400">Update your security credentials</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setChangePasswordOpen(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {passwordError && (
+                <div className="p-3 mb-4 rounded-xl bg-rose-950/80 border border-rose-800/80 text-rose-200 text-xs leading-relaxed">
+                  {passwordError}
+                </div>
+              )}
+
+              <form onSubmit={handleChangePassword} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">
+                    Current Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter current password"
+                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">
+                    New Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Min 10 chars (Uppercase, lowercase, digit, special char)"
+                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Must be at least 10 chars with uppercase, lowercase, number & symbol.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-400 mb-1">
+                    Confirm New Password
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Repeat new password"
+                    className="w-full px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500"
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-2 border-t border-slate-800/80">
+                  <button
+                    type="button"
+                    onClick={() => setChangePasswordOpen(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isChangingPassword}
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-md shadow-brand-600/30 transition"
+                  >
+                    {isChangingPassword ? 'Updating...' : 'Update Password'}
+                  </button>
                 </div>
               </form>
             </div>

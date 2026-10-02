@@ -49,7 +49,7 @@ def test_stock_item(client: TestClient, auth_headers: dict) -> int:
     return item["id"]
 
 
-def test_stock_in_increases_quantity_and_records_ledger(client: TestClient, auth_headers: dict, test_stock_item: int):
+def test_stock_in_increases_quantity_and_records_ledger(client: TestClient, auth_headers: dict, test_stock_item: int) -> None:
     item_id = test_stock_item
 
     # Stock In 15 boxes
@@ -80,7 +80,7 @@ def test_stock_in_increases_quantity_and_records_ledger(client: TestClient, auth
     assert latest_mov["balanceAfter"] == "35.00"
 
 
-def test_stock_out_automatic_deduction_and_insufficient_stock(client: TestClient, auth_headers: dict, test_stock_item: int):
+def test_stock_out_automatic_deduction_and_insufficient_stock(client: TestClient, auth_headers: dict, test_stock_item: int) -> None:
     item_id = test_stock_item
 
     # Current stock is 20.00
@@ -122,7 +122,7 @@ def test_stock_out_automatic_deduction_and_insufficient_stock(client: TestClient
     assert item_check["isLowStock"] is True
 
 
-def test_concurrency_simultaneous_stock_outs_prevent_overselling(client: TestClient, auth_headers: dict):
+def test_concurrency_simultaneous_stock_outs_prevent_overselling(client: TestClient, auth_headers: dict) -> None:
     """
     Race condition / concurrency test:
     Item has 10 units in stock.

@@ -78,6 +78,9 @@ export const api = {
   getMe: () =>
     request<any>('/auth/me'),
 
+  changePassword: (payload: { currentPassword: string; newPassword: string }) =>
+    request<any>('/auth/change-password', { method: 'POST', body: JSON.stringify(payload) }),
+
   // Master Data
   getCategories: () =>
     request<any[]>('/categories'),

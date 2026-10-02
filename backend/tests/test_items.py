@@ -35,7 +35,7 @@ def setup_category_and_unit(client: TestClient, auth_admin_token: str) -> tuple[
     return cat_res.json()["id"], unit_res.json()["id"]
 
 
-def test_item_create_and_barcode_lookup(client: TestClient, auth_admin_token: str, setup_category_and_unit):
+def test_item_create_and_barcode_lookup(client: TestClient, auth_admin_token: str, setup_category_and_unit: tuple[int, int]) -> None:
     cat_id, unit_id = setup_category_and_unit
     headers = {"Authorization": f"Bearer {auth_admin_token}", "X-Requested-With": "XMLHttpRequest"}
 
@@ -71,7 +71,7 @@ def test_item_create_and_barcode_lookup(client: TestClient, auth_admin_token: st
     assert not_found_res.json()["detail"] == "Item not found"
 
 
-def test_duplicate_barcode_and_code_validation(client: TestClient, auth_admin_token: str, setup_category_and_unit):
+def test_duplicate_barcode_and_code_validation(client: TestClient, auth_admin_token: str, setup_category_and_unit: tuple[int, int]) -> None:
     cat_id, unit_id = setup_category_and_unit
     headers = {"Authorization": f"Bearer {auth_admin_token}", "X-Requested-With": "XMLHttpRequest"}
 
@@ -118,7 +118,7 @@ def test_duplicate_barcode_and_code_validation(client: TestClient, auth_admin_to
     assert "already registered" in dup_barcode_res.json()["detail"]
 
 
-def test_item_update_and_soft_delete(client: TestClient, auth_admin_token: str, setup_category_and_unit):
+def test_item_update_and_soft_delete(client: TestClient, auth_admin_token: str, setup_category_and_unit: tuple[int, int]) -> None:
     cat_id, unit_id = setup_category_and_unit
     headers = {"Authorization": f"Bearer {auth_admin_token}", "X-Requested-With": "XMLHttpRequest"}
 
@@ -154,7 +154,7 @@ def test_item_update_and_soft_delete(client: TestClient, auth_admin_token: str, 
     assert scanned.status_code == 404
 
 
-def test_item_bulk_csv_import_and_export(client: TestClient, auth_admin_token: str, setup_category_and_unit):
+def test_item_bulk_csv_import_and_export(client: TestClient, auth_admin_token: str, setup_category_and_unit: tuple[int, int]) -> None:
     headers = {"Authorization": f"Bearer {auth_admin_token}", "X-Requested-With": "XMLHttpRequest"}
 
     # CSV with 2 valid items and 1 error row

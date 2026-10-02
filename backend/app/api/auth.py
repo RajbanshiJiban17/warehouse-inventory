@@ -7,13 +7,16 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_client_ip
+from app.core.security import verify_password, hash_password
 from app.models.user import User
-from app.schemas.user import UserRegisterRequest, UserLoginRequest, UserResponse
+from app.models.audit import AuditAction
+from app.schemas.user import UserRegisterRequest, UserLoginRequest, UserResponse, UserChangePasswordRequest
 from app.services.auth_service import (
     register_user,
     authenticate_user,
     rotate_refresh_token,
     logout_user,
+    log_audit_event,
 )
 
 limiter = Limiter(key_func=get_remote_address)
@@ -155,3 +158,38 @@ def logout(
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
+
+
+@router.post("/change-password")
+def change_my_password(
+    request_data: UserChangePasswordRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    from fastapi import HTTPException
+    if not verify_password(request_data.currentPassword, current_user.passwordHash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    current_user.passwordHash = hash_password(request_data.newPassword)
+    db.commit()
+
+    ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent")
+    log_audit_event(
+        db=db,
+        action=AuditAction.PASSWORD_RESET,
+        entity="USER",
+        userId=current_user.id,
+        entityId=str(current_user.id),
+        newValue={"action": "SELF_PASSWORD_CHANGE"},
+        ip=ip,
+        userAgent=user_agent,
+    )
+    db.commit()
+
+    return {"message": "Password changed successfully"}
+

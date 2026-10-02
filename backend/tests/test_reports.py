@@ -88,7 +88,7 @@ def seeded_report_env(client: TestClient, auth_headers: dict) -> list[int]:
     return [item1, item2, item3]
 
 
-def test_dashboard_stats_and_charts(client: TestClient, auth_headers: dict, seeded_report_env):
+def test_dashboard_stats_and_charts(client: TestClient, auth_headers: dict, seeded_report_env: list) -> None:
     # 1. Stats
     stats_res = client.get("/api/dashboard/stats", headers=auth_headers)
     assert stats_res.status_code == 200
@@ -111,8 +111,8 @@ def test_dashboard_stats_and_charts(client: TestClient, auth_headers: dict, seed
 
 
 def test_mathematical_reconciliation_opening_plus_in_minus_out_equals_closing(
-    client: TestClient, auth_headers: dict, seeded_report_env
-):
+    client: TestClient, auth_headers: dict, seeded_report_env: list
+) -> None:
     """
     CRITICAL PROMPT REQUIREMENT:
     'Report numbers must always reconcile: Opening + In - Out = Closing. Add an automated test that proves this.'
@@ -137,7 +137,7 @@ def test_mathematical_reconciliation_opening_plus_in_minus_out_equals_closing(
         assert it["isReconciled"] is True
 
 
-def test_analytical_reports_filtering(client: TestClient, auth_headers: dict, seeded_report_env):
+def test_analytical_reports_filtering(client: TestClient, auth_headers: dict, seeded_report_env: list) -> None:
     # 1. Current stock report
     curr_res = client.get("/api/reports/current-stock?search=Keyboard", headers=auth_headers)
     assert curr_res.status_code == 200
@@ -171,7 +171,7 @@ def test_analytical_reports_filtering(client: TestClient, auth_headers: dict, se
     assert act_res.json()["total"] >= 1
 
 
-def test_report_exports_csv_excel_pdf(client: TestClient, auth_headers: dict, seeded_report_env):
+def test_report_exports_csv_excel_pdf(client: TestClient, auth_headers: dict, seeded_report_env: list) -> None:
     # 1. CSV export
     csv_res = client.get("/api/reports/current-stock?format=csv", headers=auth_headers)
     assert csv_res.status_code == 200

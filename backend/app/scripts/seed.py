@@ -20,32 +20,8 @@ def seed_database() -> None:
     try:
         print("[*] Starting database seed...")
 
-        # 1. Seed Admin User
-        admin_user = db.query(User).filter(User.username == settings.ADMIN_USERNAME).first()
-        if not admin_user:
-            admin_user = User(
-                username=settings.ADMIN_USERNAME,
-                email=settings.ADMIN_EMAIL,
-                passwordHash=hash_password(settings.ADMIN_INITIAL_PASSWORD),
-                role=UserRole.ADMIN,
-                status=UserStatus.ACTIVE,
-            )
-            db.add(admin_user)
-            db.commit()
-            db.refresh(admin_user)
-
-            db.add(AuditLog(
-                userId=admin_user.id,
-                action=AuditAction.CREATE,
-                entity="USER",
-                entityId=str(admin_user.id),
-                newValue={"username": admin_user.username, "role": admin_user.role},
-                ip="127.0.0.1",
-            ))
-            db.commit()
-            print(f"[+] Created Admin user: {settings.ADMIN_USERNAME}")
-        else:
-            print(f"[*] Admin user '{settings.ADMIN_USERNAME}' already exists.")
+        # 1. Admin account will be registered directly by the user on the registration page
+        print("[*] Note: Admin user is not hardcoded. The administrator registers their own account.")
 
         # 2. Seed Units
         default_units = [
@@ -158,7 +134,7 @@ def seed_database() -> None:
                     unitId=unit_map[unit_name].id,
                     quantity=Decimal(str(qty)),
                     minStockLevel=Decimal(str(min_stock)),
-                    createdBy=admin_user.id,
+                    createdBy=None,
                 )
                 db.add(item)
                 db.commit()
@@ -171,7 +147,7 @@ def seed_database() -> None:
                     quantity=Decimal(str(qty)),
                     balanceAfter=Decimal(str(qty)),
                     referenceId="INITIAL_SEED",
-                    createdBy=admin_user.id,
+                    createdBy=None,
                 )
                 db.add(movement)
                 db.commit()

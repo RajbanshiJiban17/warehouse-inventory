@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.models.user import User, UserRole, UserStatus
 
 
-def test_registration_first_user_admin_second_user_pending(client: TestClient):
+def test_registration_first_user_admin_second_user_pending(client: TestClient) -> None:
     # 1. Register first user -> becomes ADMIN and ACTIVE
     res1 = client.post(
         "/api/auth/register",
@@ -42,7 +42,7 @@ def test_registration_first_user_admin_second_user_pending(client: TestClient):
     assert data2["status"] == UserStatus.ACTIVE
 
 
-def test_pending_user_cannot_login(client: TestClient, db_session: Session):
+def test_pending_user_cannot_login(client: TestClient, db_session: Session) -> None:
     # Register user
     client.post(
         "/api/auth/register",
@@ -62,7 +62,7 @@ def test_pending_user_cannot_login(client: TestClient, db_session: Session):
     assert "pending administrator approval" in res.json()["detail"]
 
 
-def test_brute_force_rate_limit_and_account_lockout(client: TestClient, db_session: Session):
+def test_brute_force_rate_limit_and_account_lockout(client: TestClient, db_session: Session) -> None:
     from app.api.auth import limiter
 
     # Create active user
@@ -108,7 +108,7 @@ def test_brute_force_rate_limit_and_account_lockout(client: TestClient, db_sessi
 
 
 
-def test_admin_approves_staff_and_staff_logs_in(client: TestClient):
+def test_admin_approves_staff_and_staff_logs_in(client: TestClient) -> None:
     # 1. Register admin
     admin_reg = client.post(
         "/api/auth/register",
@@ -148,7 +148,7 @@ def test_admin_approves_staff_and_staff_logs_in(client: TestClient):
     assert staff_login.json()["user"]["username"] == "staff_user"
 
 
-def test_refresh_token_rotation_and_reuse_detection(client: TestClient, db_session: Session):
+def test_refresh_token_rotation_and_reuse_detection(client: TestClient, db_session: Session) -> None:
     # 1. Register & Login
     client.post(
         "/api/auth/register",
@@ -185,7 +185,7 @@ def test_refresh_token_rotation_and_reuse_detection(client: TestClient, db_sessi
     assert res_family.status_code == 401
 
 
-def test_rbac_staff_cannot_access_admin_endpoints(client: TestClient, db_session: Session):
+def test_rbac_staff_cannot_access_admin_endpoints(client: TestClient, db_session: Session) -> None:
     # 1. Register admin and staff
     client.post(
         "/api/auth/register",
@@ -226,7 +226,7 @@ def test_rbac_staff_cannot_access_admin_endpoints(client: TestClient, db_session
     assert "Administrator access required" in rbac_audit.json()["detail"]
 
 
-def test_logout_and_audit_logging(client: TestClient, db_session: Session):
+def test_logout_and_audit_logging(client: TestClient, db_session: Session) -> None:
     # 1. Register & login
     client.post(
         "/api/auth/register",
@@ -255,7 +255,7 @@ def test_logout_and_audit_logging(client: TestClient, db_session: Session):
     assert refresh_after_logout.status_code == 401
 
 
-def test_admin_user_management_crud(client: TestClient):
+def test_admin_user_management_crud(client: TestClient) -> None:
     # Register admin
     admin_reg = client.post(
         "/api/auth/register",
@@ -331,7 +331,7 @@ def test_admin_user_management_crud(client: TestClient):
     assert new_login.status_code == 200
 
 
-def test_audit_logs_viewer(client: TestClient):
+def test_audit_logs_viewer(client: TestClient) -> None:
     # Register admin
     client.post(
         "/api/auth/register",
@@ -352,4 +352,50 @@ def test_audit_logs_viewer(client: TestClient):
     data = audit_res.json()
     assert data["total"] > 0
     assert len(data["items"]) > 0
+
+
+def test_user_can_change_own_password(client: TestClient) -> None:
+    # 1. Register user
+    client.post(
+        "/api/auth/register",
+        json={"username": "pw_admin", "email": "pw_admin@example.com", "password": "OldPassword@2026"},
+    )
+    login_res = client.post(
+        "/api/auth/login",
+        json={"username": "pw_admin", "password": "OldPassword@2026"},
+    )
+    token = login_res.json()["accessToken"]
+    headers = {"Authorization": f"Bearer {token}", "X-Requested-With": "XMLHttpRequest"}
+
+    # 2. Change password with wrong current password -> 400
+    wrong_res = client.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"currentPassword": "WrongPassword123!", "newPassword": "BrandNewPass@2026"},
+    )
+    assert wrong_res.status_code == 400
+    assert "Current password is incorrect" in wrong_res.json()["detail"]
+
+    # 3. Change password successfully
+    success_res = client.post(
+        "/api/auth/change-password",
+        headers=headers,
+        json={"currentPassword": "OldPassword@2026", "newPassword": "BrandNewPass@2026"},
+    )
+    assert success_res.status_code == 200
+
+    # 4. Old password fails
+    old_login = client.post(
+        "/api/auth/login",
+        json={"username": "pw_admin", "password": "OldPassword@2026"},
+    )
+    assert old_login.status_code == 401
+
+    # 5. New password succeeds
+    new_login = client.post(
+        "/api/auth/login",
+        json={"username": "pw_admin", "password": "BrandNewPass@2026"},
+    )
+    assert new_login.status_code == 200
+
 

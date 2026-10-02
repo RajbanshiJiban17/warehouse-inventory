@@ -99,6 +99,21 @@ class UserResetPasswordRequest(BaseModel):
         return v
 
 
+class UserChangePasswordRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    currentPassword: str = Field(..., min_length=1, max_length=128)
+    newPassword: str = Field(..., min_length=10, max_length=128)
+
+    @field_validator("newPassword")
+    @classmethod
+    def check_password_strength(cls, v: str) -> str:
+        valid, msg = validate_password_strength(v)
+        if not valid:
+            raise ValueError(msg)
+        return v
+
+
 class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="forbid",
+        extra="ignore",
         case_sensitive=True,
     )
 
@@ -24,11 +24,6 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALGORITHM: str = "HS256"
-
-    # Admin seed defaults
-    ADMIN_USERNAME: str = "admin"
-    ADMIN_EMAIL: str = "admin@inventory.local"
-    ADMIN_INITIAL_PASSWORD: str = "Admin@SecurePass2026!"
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"

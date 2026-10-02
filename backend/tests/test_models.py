@@ -8,6 +8,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from fastapi.testclient import TestClient
 
 from app.models import (
     User, UserRole, UserStatus,
@@ -18,7 +19,7 @@ from app.models import (
 from app.core.security import hash_password, verify_password, validate_password_strength
 
 
-def test_password_hashing_and_verification():
+def test_password_hashing_and_verification() -> None:
     raw_pass = "SecureWarehousePass2026!"
     is_valid, msg = validate_password_strength(raw_pass)
     assert is_valid, msg
@@ -29,7 +30,7 @@ def test_password_hashing_and_verification():
     assert verify_password("WrongPassword123!", hashed) is False
 
 
-def test_user_creation_and_roles(db_session: Session):
+def test_user_creation_and_roles(db_session: Session) -> None:
     admin = User(
         username="superadmin",
         email="superadmin@example.com",
@@ -46,7 +47,7 @@ def test_user_creation_and_roles(db_session: Session):
     assert saved_user.status == UserStatus.ACTIVE
 
 
-def test_item_creation_and_non_negative_check_constraint(db_session: Session):
+def test_item_creation_and_non_negative_check_constraint(db_session: Session) -> None:
     cat = Category(name="Electronics", description="Gadgets")
     unit = Unit(name="pcs", description="Pieces")
     db_session.add_all([cat, unit])
@@ -75,7 +76,7 @@ def test_item_creation_and_non_negative_check_constraint(db_session: Session):
     db_session.rollback()
 
 
-def test_stock_in_and_stock_out_automatic_deduction_and_ledger(db_session: Session):
+def test_stock_in_and_stock_out_automatic_deduction_and_ledger(db_session: Session) -> None:
     """
     Test user requirement:
     Item In increases stock quantity.
@@ -179,7 +180,7 @@ def test_stock_in_and_stock_out_automatic_deduction_and_ledger(db_session: Sessi
     assert movements[2].type == MovementType.OUT and movements[2].balanceAfter == Decimal("110.00")
 
 
-def test_stock_in_quantity_must_be_positive(db_session: Session):
+def test_stock_in_quantity_must_be_positive(db_session: Session) -> None:
     cat = Category(name="Packaging")
     unit = Unit(name="box")
     admin = User(
@@ -202,7 +203,7 @@ def test_stock_in_quantity_must_be_positive(db_session: Session):
     db_session.rollback()
 
 
-def test_stock_out_quantity_must_be_positive(db_session: Session):
+def test_stock_out_quantity_must_be_positive(db_session: Session) -> None:
     cat = Category(name="Office")
     unit = Unit(name="pcs")
     admin = User(
@@ -225,7 +226,7 @@ def test_stock_out_quantity_must_be_positive(db_session: Session):
     db_session.rollback()
 
 
-def test_health_check_endpoint(client):
+def test_health_check_endpoint(client: TestClient) -> None:
     response = client.get("/api/health")
     assert response.status_code == 200
     data = response.json()
