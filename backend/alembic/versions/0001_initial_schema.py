@@ -176,7 +176,7 @@ def upgrade() -> None:
         sa.Column('referenceId', sa.String(length=100), nullable=True),
         sa.Column('createdBy', sa.Integer(), nullable=True),
         sa.Column('createdAt', sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint('balanceAfter >= 0', name='check_movement_balance_non_negative'),
+        sa.CheckConstraint('"balanceAfter" >= 0', name='check_movement_balance_non_negative'),
         sa.ForeignKeyConstraint(['itemId'], ['items.id'], ondelete='RESTRICT'),
         sa.ForeignKeyConstraint(['createdBy'], ['users.id']),
         sa.PrimaryKeyConstraint('id'),

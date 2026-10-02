@@ -57,7 +57,7 @@ class StockMovement(Base):
     """
     __tablename__ = "stock_movements"
     __table_args__ = (
-        CheckConstraint("balanceAfter >= 0", name="check_movement_balance_non_negative"),
+        CheckConstraint('"balanceAfter" >= 0', name="check_movement_balance_non_negative"),
     )
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
