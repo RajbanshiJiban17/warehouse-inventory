@@ -30,16 +30,22 @@ def register_exception_handlers(app: FastAPI) -> None:
             method=request.method,
             errors=exc.errors(),
         )
-        # Format clean, safe error messages for client
+        # Format clean, readable error messages for client
         errors = []
+        readable_messages = []
         for error in exc.errors():
             loc = " -> ".join(str(l) for l in error.get("loc", []))
-            errors.append(f"{loc}: {error.get('msg', 'Invalid input')}")
+            clean_field = " -> ".join(str(l) for l in error.get("loc", []) if l != "body")
+            msg = error.get("msg", "Invalid input")
+            errors.append(f"{loc}: {msg}")
+            readable_messages.append(f"{clean_field}: {msg}" if clean_field else msg)
+
+        readable_detail = "; ".join(readable_messages) if readable_messages else "Validation error in request payload"
 
         return JSONResponse(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content={
-                "detail": "Validation error in request payload",
+                "detail": readable_detail,
                 "errors": errors,
             },
         )
