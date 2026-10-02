@@ -1,3 +1,4 @@
+https://goodwan-inventory-frontend.onrender.com/
 # GoodWan Inventory & Warehouse Management System (INV-GoodWan)
 
 A production-grade, secure, modern Inventory and Warehouse Management System built strictly according to the architecture specification.
