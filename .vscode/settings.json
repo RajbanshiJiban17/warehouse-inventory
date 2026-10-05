@@ -4,9 +4,12 @@
   "editor.formatOnSave": true,
   "python.defaultInterpreterPath": "C:\\Users\\User\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0\\python.exe",
   "python.analysis.extraPaths": [
-    "./backend"
+    "${workspaceFolder}/backend"
   ],
   "python.autoComplete.extraPaths": [
-    "./backend"
-  ]
+    "${workspaceFolder}/backend"
+  ],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingModuleSource": "none"
+  }
 }

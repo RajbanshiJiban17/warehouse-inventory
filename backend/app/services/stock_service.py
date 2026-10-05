@@ -77,6 +77,11 @@ def process_stock_in(
             calc_amount = qty * u_price
 
         # 2. Insert StockIn
+        # Resolve batch number if user entered mfg/expiry dates without a batch number
+        final_batch_no = request.batchNo.strip() if (request.batchNo and request.batchNo.strip()) else None
+        if not final_batch_no and (request.mfgDate or request.expiryDate):
+            final_batch_no = f"BAT-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
+
         stock_in_entry = StockIn(
             itemId=item.id,
             quantity=qty,
@@ -88,7 +93,7 @@ def process_stock_in(
             location=request.location or "Godown",
             unitPrice=u_price,
             amount=calc_amount,
-            batchNo=request.batchNo.strip() if request.batchNo else None,
+            batchNo=final_batch_no,
             mfgDate=request.mfgDate,
             expiryDate=request.expiryDate,
             createdBy=user_id,
@@ -96,10 +101,9 @@ def process_stock_in(
         db.add(stock_in_entry)
         db.flush()
 
-        # Maintain ItemBatch if batchNo is provided
-        if request.batchNo and request.batchNo.strip():
-            b_no = request.batchNo.strip()
-            batch = db.query(ItemBatch).filter(ItemBatch.itemId == item.id, ItemBatch.batchNo == b_no).first()
+        # Maintain ItemBatch if batchNo is resolved
+        if final_batch_no:
+            batch = db.query(ItemBatch).filter(ItemBatch.itemId == item.id, ItemBatch.batchNo == final_batch_no).first()
             if batch:
                 batch.quantity += qty
                 batch.initialQuantity += qty
@@ -109,10 +113,12 @@ def process_stock_in(
                     batch.expiryDate = request.expiryDate
                 if u_price > 0:
                     batch.unitPrice = u_price
+                if request.supplierName:
+                    batch.supplierName = request.supplierName
             else:
                 batch = ItemBatch(
                     itemId=item.id,
-                    batchNo=b_no,
+                    batchNo=final_batch_no,
                     mfgDate=request.mfgDate,
                     expiryDate=request.expiryDate,
                     quantity=qty,
@@ -123,13 +129,9 @@ def process_stock_in(
                 db.add(batch)
 
         # 3. Increase Item.quantity atomically
-        stmt = (
-            update(Item)
-            .where(Item.id == item.id)
-            .values(quantity=Item.quantity + qty)
-        )
-        db.execute(stmt)
-        db.refresh(item)
+        new_balance = Decimal(str(item.quantity)) + qty
+        item.quantity = new_balance
+        db.flush()
 
         # 4. Insert StockMovement ledger record
         ref_id = request.idempotencyKey or f"IN_{stock_in_entry.id}"
@@ -137,7 +139,7 @@ def process_stock_in(
             itemId=item.id,
             type=MovementType.IN,
             quantity=qty,
-            balanceAfter=item.quantity,
+            balanceAfter=new_balance,
             referenceId=ref_id,
             createdBy=user_id,
         )
@@ -365,7 +367,7 @@ def list_stock_in_entries(
     limit: int = 50,
     offset: int = 0,
 ) -> Tuple[List[StockInResponse], int]:
-    query = db.query(StockIn).join(Item).join(User)
+    query = db.query(StockIn).outerjoin(Item, StockIn.itemId == Item.id).outerjoin(User, StockIn.createdBy == User.id)
 
     if item_id:
         query = query.filter(StockIn.itemId == item_id)
@@ -381,16 +383,18 @@ def list_stock_in_entries(
 
     results = []
     for e in entries:
+        item_obj = e.item
+        unit_str = (item_obj.unit.name if (item_obj and item_obj.unit) else "pcs")
         results.append(
             StockInResponse(
                 id=e.id,
                 itemId=e.itemId,
-                itemCode=e.item.itemCode,
-                itemName=e.item.itemName,
-                barcode=e.item.barcode,
-                unitName=e.item.unit.name if e.item.unit else "pcs",
+                itemCode=item_obj.itemCode if item_obj else f"ITM-{e.itemId}",
+                itemName=item_obj.itemName if item_obj else "Unknown Item",
+                barcode=item_obj.barcode if item_obj else "",
+                unitName=unit_str,
                 quantity=e.quantity,
-                balanceAfter=e.item.quantity,
+                balanceAfter=item_obj.quantity if item_obj else e.quantity,
                 remark=e.remark,
                 dateAD=e.dateAD,
                 dateBS=e.dateBS,
@@ -419,7 +423,7 @@ def list_stock_out_entries(
     limit: int = 50,
     offset: int = 0,
 ) -> Tuple[List[StockOutResponse], int]:
-    query = db.query(StockOut).join(Item).join(User)
+    query = db.query(StockOut).outerjoin(Item, StockOut.itemId == Item.id).outerjoin(User, StockOut.createdBy == User.id)
 
     if item_id:
         query = query.filter(StockOut.itemId == item_id)
@@ -437,18 +441,21 @@ def list_stock_out_entries(
 
     results = []
     for e in entries:
+        item_obj = e.item
+        unit_str = (item_obj.unit.name if (item_obj and item_obj.unit) else "pcs")
+        is_low = bool(item_obj and item_obj.quantity <= item_obj.minStockLevel)
         results.append(
             StockOutResponse(
                 id=e.id,
                 itemId=e.itemId,
-                itemCode=e.item.itemCode,
-                itemName=e.item.itemName,
-                barcode=e.item.barcode,
-                unitName=e.item.unit.name if e.item.unit else "pcs",
+                itemCode=item_obj.itemCode if item_obj else f"ITM-{e.itemId}",
+                itemName=item_obj.itemName if item_obj else "Unknown Item",
+                barcode=item_obj.barcode if item_obj else "",
+                unitName=unit_str,
                 quantity=e.quantity,
                 location=e.location,
-                balanceAfter=e.item.quantity,
-                isLowStockWarning=bool(e.item.quantity <= e.item.minStockLevel),
+                balanceAfter=item_obj.quantity if item_obj else Decimal("0.00"),
+                isLowStockWarning=is_low,
                 remark=e.remark,
                 dateAD=e.dateAD,
                 dateBS=e.dateBS,
@@ -461,6 +468,27 @@ def list_stock_out_entries(
             )
         )
     return results, total
+
+
+def list_item_batches(db: Session, item_id: Optional[int] = None) -> List[dict]:
+    query = db.query(ItemBatch).filter(ItemBatch.quantity > 0)
+    if item_id:
+        query = query.filter(ItemBatch.itemId == item_id)
+    batches = query.order_by(ItemBatch.createdAt.desc()).all()
+    return [
+        {
+            "id": b.id,
+            "itemId": b.itemId,
+            "batchNo": b.batchNo,
+            "mfgDate": b.mfgDate,
+            "expiryDate": b.expiryDate,
+            "quantity": float(b.quantity),
+            "initialQuantity": float(b.initialQuantity),
+            "unitPrice": float(b.unitPrice or 0),
+            "supplierName": b.supplierName,
+        }
+        for b in batches
+    ]
 
 
 def list_stock_movements(

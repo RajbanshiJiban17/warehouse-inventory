@@ -368,7 +368,8 @@ export const ItemMaster: React.FC = () => {
           <table className="w-full text-left text-sm text-slate-300">
             <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
               <tr>
-                <th className="px-6 py-3.5">Code & Name</th>
+                <th className="px-6 py-3.5">Item Code</th>
+                <th className="px-6 py-3.5">Item Name</th>
                 <th className="px-6 py-3.5">Barcode</th>
                 <th className="px-6 py-3.5">Category</th>
                 <th className="px-6 py-3.5 text-right">Current Stock</th>
@@ -380,13 +381,13 @@ export const ItemMaster: React.FC = () => {
             <tbody className="divide-y divide-slate-800/60">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-12 text-center text-slate-500">
                     Loading items from database...
                   </td>
                 </tr>
               ) : items.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-14 text-center">
+                  <td colSpan={8} className="px-6 py-14 text-center">
                     <div className="flex flex-col items-center justify-center space-y-3">
                       <div className="w-12 h-12 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-500">
                         <Boxes className="w-6 h-6" />
@@ -424,8 +425,12 @@ export const ItemMaster: React.FC = () => {
                 items.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-900/50 transition">
                     <td className="px-6 py-4">
-                      <div className="font-semibold text-white">{item.itemName}</div>
-                      <div className="text-xs font-mono text-brand-400">{item.itemCode}</div>
+                      <span className="font-mono text-xs font-bold text-brand-400 bg-brand-950/70 px-2 py-1 rounded-md border border-brand-800/60 inline-block">
+                        {item.itemCode}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="font-semibold text-white text-sm">{item.itemName}</div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex items-center space-x-1.5 text-xs font-mono text-slate-300">

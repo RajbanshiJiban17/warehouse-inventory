@@ -1,10 +1,15 @@
 /**
- * Bikram Sambat (BS) <-> Anno Domini (AD) Date Utilities
- * For Warehouse Inventory System (Nepal)
+ * Bikram Sambat (BS) <-> Anno Domini (AD) Accurate Bidirectional Converter
+ * Fully synchronized calendar reference for Warehouse Inventory System (Nepal)
  */
 
-// Nepali Month Names
-export const NEPALI_MONTHS = [
+export interface NepaliMonth {
+  index: number;
+  name: string;
+  devanagari: string;
+}
+
+export const NEPALI_MONTHS: NepaliMonth[] = [
   { index: 1, name: 'Baisakh', devanagari: 'बैशाख' },
   { index: 2, name: 'Jestha', devanagari: 'जेठ' },
   { index: 3, name: 'Ashadh', devanagari: 'असार' },
@@ -19,6 +24,36 @@ export const NEPALI_MONTHS = [
   { index: 12, name: 'Chaitra', devanagari: 'चैत' },
 ];
 
+// Official Bikram Sambat Calendar Matrix: [monthDays (12), Start Gregorian Date [year, monthIndex(0-based), day]]
+const BS_CALENDAR: Record<number, { days: number[]; startAD: [number, number, number] }> = {
+  2070: { days: [31, 31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30], startAD: [2013, 3, 14] },
+  2071: { days: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], startAD: [2014, 3, 14] },
+  2072: { days: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31], startAD: [2015, 3, 14] },
+  2073: { days: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31], startAD: [2016, 3, 13] },
+  2074: { days: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30], startAD: [2017, 3, 14] },
+  2075: { days: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], startAD: [2018, 3, 14] },
+  2076: { days: [31, 32, 31, 32, 31, 30, 30, 30, 29, 29, 30, 31], startAD: [2019, 3, 14] },
+  2077: { days: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31], startAD: [2020, 3, 13] },
+  2078: { days: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30], startAD: [2021, 3, 14] },
+  2079: { days: [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30], startAD: [2022, 3, 14] },
+  2080: { days: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30], startAD: [2023, 3, 14] },
+  2081: { days: [31, 31, 32, 32, 31, 30, 30, 30, 29, 30, 29, 31], startAD: [2024, 3, 13] },
+  2082: { days: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2025, 3, 14] },
+  2083: { days: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2026, 3, 14] },
+  2084: { days: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2027, 3, 14] },
+  2085: { days: [31, 32, 31, 32, 30, 31, 30, 30, 29, 30, 30, 30], startAD: [2028, 3, 13] },
+  2086: { days: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2029, 3, 14] },
+  2087: { days: [31, 31, 32, 31, 31, 31, 30, 30, 29, 30, 30, 30], startAD: [2030, 3, 14] },
+  2088: { days: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2031, 3, 14] },
+  2089: { days: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2032, 3, 13] },
+  2090: { days: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2033, 3, 14] },
+  2091: { days: [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2034, 3, 14] },
+  2092: { days: [31, 32, 31, 32, 30, 31, 30, 30, 29, 30, 30, 30], startAD: [2035, 3, 14] },
+  2093: { days: [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2036, 3, 13] },
+  2094: { days: [31, 31, 32, 31, 31, 31, 30, 30, 29, 30, 30, 30], startAD: [2037, 3, 14] },
+  2095: { days: [30, 32, 31, 32, 31, 30, 30, 30, 29, 30, 30, 30], startAD: [2038, 3, 14] },
+};
+
 /**
  * Returns today's date in YYYY-MM-DD format (AD) based on system local time
  */
@@ -31,72 +66,191 @@ export function getTodayAD(): string {
 }
 
 /**
- * Converts AD date string (YYYY-MM-DD) to approximate BS date (YYYY-MM-DD).
- * Standard reference: 2026-10-02 AD corresponds to 2083-06-16 BS.
+ * Returns today's date in YYYY-MM-DD format (BS)
+ */
+export function getTodayBS(): string {
+  return convertADtoBS(getTodayAD());
+}
+
+/**
+ * Checks if a string is a valid AD date (YYYY-MM-DD)
+ */
+export function isValidADDate(adDateStr: string): boolean {
+  if (!adDateStr || typeof adDateStr !== 'string') return false;
+  const match = adDateStr.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) return false;
+  const y = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const d = parseInt(match[3], 10);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  const dateObj = new Date(y, m - 1, d);
+  return dateObj.getFullYear() === y && dateObj.getMonth() === m - 1 && dateObj.getDate() === d;
+}
+
+/**
+ * Checks if a string is a valid BS date (YYYY-MM-DD or YYYY/MM/DD)
+ */
+export function isValidBSDate(bsDateStr: string): boolean {
+  if (!bsDateStr || typeof bsDateStr !== 'string') return false;
+  const cleaned = bsDateStr.replace(/\//g, '-').trim();
+  const match = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (!match) return false;
+  const y = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const d = parseInt(match[3], 10);
+  if (m < 1 || m > 12) return false;
+  const entry = BS_CALENDAR[y];
+  if (!entry) return y >= 2000 && y <= 2100 && d >= 1 && d <= 32;
+  const maxDays = entry.days[m - 1];
+  return d >= 1 && d <= maxDays;
+}
+
+/**
+ * Converts AD date string (YYYY-MM-DD) to BS date (YYYY-MM-DD).
  */
 export function convertADtoBS(adDateStr: string): string {
   if (!adDateStr) return '';
   try {
-    const [yStr, mStr, dStr] = adDateStr.split('-');
-    const adYear = parseInt(yStr, 10);
-    const adMonth = parseInt(mStr, 10);
-    const adDay = parseInt(dStr, 10);
+    const parts = adDateStr.split('-');
+    if (parts.length !== 3) return '';
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const d = parseInt(parts[2], 10);
+    if (isNaN(y) || isNaN(m) || isNaN(d)) return '';
 
-    if (isNaN(adYear) || isNaN(adMonth) || isNaN(adDay)) return '';
+    const adTarget = new Date(y, m - 1, d);
+    adTarget.setHours(0, 0, 0, 0);
 
-    const adDate = new Date(adYear, adMonth - 1, adDay);
+    const years = Object.keys(BS_CALENDAR)
+      .map(Number)
+      .sort((a, b) => b - a);
 
-    // Baseline Anchor: 2026-04-14 AD = 2083-01-01 BS (Nepali New Year)
-    // 2024-04-13 AD = 2081-01-01 BS
-    // 2025-04-14 AD = 2082-01-01 BS
-    // Each Nepali New Year is around April 13-14 AD (+57 years minus ~3.5 months).
-    // Days in Nepali months typically range: [31, 31, 31, 32, 31, 31, 30, 29, 30, 29, 30, 30]
+    for (const bsYear of years) {
+      const { days, startAD } = BS_CALENDAR[bsYear];
+      const startADDate = new Date(startAD[0], startAD[1], startAD[2]);
+      startADDate.setHours(0, 0, 0, 0);
 
-    // General robust calculation for modern operational range (2020-2035 AD / 2077-2092 BS):
-    const anchorAD = new Date(adYear, 3, 14); // April 14 of the same year
-    let bsYear = adYear + 57;
-    let daysDiff = Math.floor((adDate.getTime() - anchorAD.getTime()) / (1000 * 60 * 60 * 24));
-
-    if (daysDiff < 0) {
-      // Prior to mid-April, still in previous BS year
-      bsYear -= 1;
-      const prevAnchorAD = new Date(adYear - 1, 3, 14);
-      daysDiff = Math.floor((adDate.getTime() - prevAnchorAD.getTime()) / (1000 * 60 * 60 * 24));
+      if (adTarget.getTime() >= startADDate.getTime()) {
+        let diffDays = Math.round((adTarget.getTime() - startADDate.getTime()) / (1000 * 60 * 60 * 24));
+        for (let mIdx = 0; mIdx < days.length; mIdx++) {
+          if (diffDays < days[mIdx]) {
+            const bsMonth = String(mIdx + 1).padStart(2, '0');
+            const bsDay = String(diffDays + 1).padStart(2, '0');
+            return `${bsYear}-${bsMonth}-${bsDay}`;
+          }
+          diffDays -= days[mIdx];
+        }
+      }
     }
 
-    // Average days per month approximation for display synchronization
-    const monthDays = [31, 31, 32, 31, 31, 31, 30, 29, 30, 29, 30, 30];
-    let bsMonth = 1;
-    let bsDay = 1;
-
-    let remaining = daysDiff;
-    for (let i = 0; i < monthDays.length; i++) {
-      if (remaining < monthDays[i]) {
-        bsMonth = i + 1;
-        bsDay = remaining + 1;
+    // Fallback approximation for dates outside explicit calendar range:
+    const approxBSYear = y + 57;
+    const anchorAD = new Date(y, 3, 14);
+    let diff = Math.floor((adTarget.getTime() - anchorAD.getTime()) / (1000 * 60 * 60 * 24));
+    let finalBSYear = approxBSYear;
+    if (diff < 0) {
+      finalBSYear -= 1;
+      const prevAnchor = new Date(y - 1, 3, 14);
+      diff = Math.floor((adTarget.getTime() - prevAnchor.getTime()) / (1000 * 60 * 60 * 24));
+    }
+    const defaultDays = [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30];
+    let bMonth = 1;
+    let bDay = 1;
+    let rem = diff;
+    for (let i = 0; i < defaultDays.length; i++) {
+      if (rem < defaultDays[i]) {
+        bMonth = i + 1;
+        bDay = rem + 1;
         break;
       }
-      remaining -= monthDays[i];
+      rem -= defaultDays[i];
     }
-
-    const mm = String(bsMonth).padStart(2, '0');
-    const dd = String(bsDay).padStart(2, '0');
-    return `${bsYear}-${mm}-${dd}`;
+    return `${finalBSYear}-${String(bMonth).padStart(2, '0')}-${String(bDay).padStart(2, '0')}`;
   } catch {
     return '';
   }
 }
 
 /**
- * Returns formatted BS string with month name, e.g. "2083 Ashwin 16"
+ * Converts BS date string (YYYY-MM-DD or YYYY/MM/DD) to AD date (YYYY-MM-DD).
+ */
+export function convertBStoAD(bsDateStr: string): string {
+  if (!bsDateStr) return '';
+  try {
+    const cleaned = bsDateStr.replace(/\//g, '-').trim();
+    const parts = cleaned.split('-');
+    if (parts.length !== 3) return '';
+
+    const bsYear = parseInt(parts[0], 10);
+    const bsMonth = parseInt(parts[1], 10);
+    const bsDay = parseInt(parts[2], 10);
+
+    if (isNaN(bsYear) || isNaN(bsMonth) || isNaN(bsDay)) return '';
+    if (bsMonth < 1 || bsMonth > 12 || bsDay < 1) return '';
+
+    const calEntry = BS_CALENDAR[bsYear];
+    if (calEntry) {
+      const { days, startAD } = calEntry;
+      let totalDays = 0;
+      for (let i = 0; i < bsMonth - 1; i++) {
+        totalDays += days[i];
+      }
+      totalDays += bsDay - 1;
+
+      const adDate = new Date(startAD[0], startAD[1], startAD[2]);
+      adDate.setDate(adDate.getDate() + totalDays);
+
+      const y = adDate.getFullYear();
+      const m = String(adDate.getMonth() + 1).padStart(2, '0');
+      const d = String(adDate.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+
+    // Fallback approximation for years outside predefined map
+    const estADYear = bsYear - 57;
+    const anchorAD = new Date(estADYear, 3, 14);
+    const defaultDays = [31, 31, 32, 31, 31, 30, 30, 30, 29, 30, 30, 30];
+    let totalDays = 0;
+    for (let i = 0; i < bsMonth - 1; i++) {
+      totalDays += defaultDays[i];
+    }
+    totalDays += bsDay - 1;
+    anchorAD.setDate(anchorAD.getDate() + totalDays);
+
+    const y = anchorAD.getFullYear();
+    const m = String(anchorAD.getMonth() + 1).padStart(2, '0');
+    const d = String(anchorAD.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Returns formatted BS string with month name, e.g. "2083 Ashwin 19 (असोज १९)"
  */
 export function formatBSDisplay(bsDateStr: string): string {
   if (!bsDateStr) return '';
-  const parts = bsDateStr.split('-');
+  const cleaned = bsDateStr.replace(/\//g, '-').trim();
+  const parts = cleaned.split('-');
   if (parts.length !== 3) return bsDateStr;
   const year = parts[0];
   const monthIdx = parseInt(parts[1], 10);
-  const day = parts[2];
+  const day = parseInt(parts[2], 10);
   const m = NEPALI_MONTHS.find((item) => item.index === monthIdx);
-  return `${year} ${m ? m.name : parts[1]} ${day}`;
+  if (!m) return bsDateStr;
+  return `${year} ${m.name} ${day} (${m.devanagari} ${day})`;
+}
+
+/**
+ * Returns formatted AD string with English month name, e.g. "05 Oct 2026"
+ */
+export function formatADDisplay(adDateStr: string): string {
+  if (!adDateStr) return '';
+  const parts = adDateStr.split('-');
+  if (parts.length !== 3) return adDateStr;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const mIdx = parseInt(parts[1], 10) - 1;
+  if (mIdx < 0 || mIdx > 11) return adDateStr;
+  return `${parts[2]} ${months[mIdx]} ${parts[0]}`;
 }

@@ -14,6 +14,7 @@ class AuditAction:
     APPROVE = "APPROVE"
     ROLE_CHANGE = "ROLE_CHANGE"
     PASSWORD_RESET = "PASSWORD_RESET"
+    BULK_IMPORT = "BULK_IMPORT"
 
 
 class AuditLog(Base):

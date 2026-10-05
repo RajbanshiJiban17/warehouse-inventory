@@ -72,17 +72,21 @@ export const Reports: React.FC = () => {
     window.open(url, '_blank');
   };
 
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
+  useEffect(() => {
+    setCurrentTime(Date.now());
+  }, [reportData, batchData]);
+
   const isExpired = (expiryDate?: string) => {
     if (!expiryDate) return false;
-    return new Date(expiryDate) < new Date();
+    return new Date(expiryDate).getTime() < currentTime;
   };
 
   const isExpiringSoon = (expiryDate?: string) => {
     if (!expiryDate) return false;
     const exp = new Date(expiryDate).getTime();
-    const now = new Date().getTime();
     const days30 = 30 * 24 * 60 * 60 * 1000;
-    return exp > now && exp - now <= days30;
+    return exp > currentTime && exp - currentTime <= days30;
   };
 
   return (
@@ -226,7 +230,8 @@ export const Reports: React.FC = () => {
               <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
                 <tr>
                   <th className="px-4 py-3.5 text-center w-16">S.N</th>
-                  <th className="px-6 py-3.5">Item Name & Code</th>
+                  <th className="px-4 py-3.5">Item Code</th>
+                  <th className="px-6 py-3.5">Item Name</th>
                   <th className="px-4 py-3.5">Barcode</th>
                   <th className="px-4 py-3.5">Batch No</th>
                   <th className="px-4 py-3.5">MFG Date</th>
@@ -239,13 +244,13 @@ export const Reports: React.FC = () => {
               <tbody className="divide-y divide-slate-800/60 font-mono text-xs">
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-slate-500 font-sans">
+                    <td colSpan={10} className="px-6 py-12 text-center text-slate-500 font-sans">
                       Loading batch details and expiry records...
                     </td>
                   </tr>
                 ) : batchData.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-slate-500 font-sans">
+                    <td colSpan={10} className="px-6 py-12 text-center text-slate-500 font-sans">
                       No batch stock records found. When items are stocked in with Batch numbers, they will appear here.
                     </td>
                   </tr>
@@ -260,9 +265,11 @@ export const Reports: React.FC = () => {
                         <td className="px-4 py-4 text-center text-slate-400 font-bold">
                           {idx + 1}
                         </td>
+                        <td className="px-4 py-4 text-xs font-mono text-brand-400 font-bold">
+                          {row.itemCode}
+                        </td>
                         <td className="px-6 py-4 font-sans">
                           <div className="font-semibold text-white text-sm">{row.itemName}</div>
-                          <div className="text-xs text-brand-400 font-mono">{row.itemCode}</div>
                           {row.supplierName && (
                             <div className="text-[11px] text-slate-500 mt-0.5">
                               Supplier: {row.supplierName}
@@ -344,7 +351,8 @@ export const Reports: React.FC = () => {
             <table className="w-full text-left text-sm text-slate-300">
               <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
                 <tr>
-                  <th className="px-6 py-3.5">Item Code & Name</th>
+                  <th className="px-4 py-3.5">Item Code</th>
+                  <th className="px-6 py-3.5">Item Name</th>
                   <th className="px-6 py-3.5 text-right">Opening Qty</th>
                   <th className="px-6 py-3.5 text-right">Total In (+)</th>
                   <th className="px-6 py-3.5 text-right">Total Out (-)</th>
@@ -355,22 +363,24 @@ export const Reports: React.FC = () => {
               <tbody className="divide-y divide-slate-800/60 font-mono text-xs">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500 font-sans">
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 font-sans">
                       Calculating ledger balances...
                     </td>
                   </tr>
                 ) : reportData.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-12 text-center text-slate-500 font-sans">
+                    <td colSpan={7} className="px-6 py-12 text-center text-slate-500 font-sans">
                       No stock movement ledger records found.
                     </td>
                   </tr>
                 ) : (
                   reportData.map((row, idx) => (
                     <tr key={idx} className="hover:bg-slate-900/50 transition">
+                      <td className="px-4 py-4 font-mono text-xs text-brand-400 font-bold">
+                        {row.itemCode}
+                      </td>
                       <td className="px-6 py-4 font-sans">
                         <div className="font-semibold text-white">{row.itemName}</div>
-                        <div className="text-xs text-brand-400 font-mono">{row.itemCode}</div>
                       </td>
                       <td className="px-6 py-4 text-right text-slate-300">{Number(row.openingQuantity).toLocaleString()}</td>
                       <td className="px-6 py-4 text-right text-emerald-400">+{Number(row.totalIn).toLocaleString()}</td>

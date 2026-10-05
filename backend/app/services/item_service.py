@@ -88,7 +88,7 @@ def get_item_by_id(db: Session, item_id: int) -> Item:
 
 
 def get_item_by_barcode(db: Session, barcode: str) -> ItemResponse:
-    item = db.query(Item).filter(Item.barcode == barcode.strip(), Item.isActive == True).first()
+    item = db.query(Item).filter(Item.barcode == barcode.strip(), Item.isActive.is_(True)).first()
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -98,7 +98,7 @@ def get_item_by_barcode(db: Session, barcode: str) -> ItemResponse:
 
 
 def get_item_by_code(db: Session, item_code: str) -> ItemResponse:
-    item = db.query(Item).filter(Item.itemCode == item_code.strip(), Item.isActive == True).first()
+    item = db.query(Item).filter(Item.itemCode == item_code.strip(), Item.isActive.is_(True)).first()
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -377,7 +377,7 @@ def import_items_from_file(
     known_keys = {"itemName", "itemCode", "sn", "barcode", "categoryName", "unitName", "openingQuantity", "minStockLevel"}
 
     if filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls"):
-        import openpyxl
+        import openpyxl  # type: ignore
         wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
         # Select sheet with maximum rows in case first sheet is empty or an instruction tab
         sheet = max(wb.worksheets, key=lambda s: s.max_row or 0) if wb.worksheets else wb.active
@@ -598,7 +598,7 @@ def import_items_from_file(
     if imported > 0:
         log_audit_event(
             db=db,
-            action="BULK_IMPORT",
+            action=AuditAction.BULK_IMPORT,
             entity="ITEM",
             userId=user_id,
             newValue={"importedCount": imported, "failedCount": len(errors)},

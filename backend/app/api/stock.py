@@ -19,6 +19,7 @@ from app.services.stock_service import (
     list_stock_in_entries,
     list_stock_out_entries,
     list_stock_movements,
+    list_item_batches,
 )
 
 router = APIRouter(prefix="/api/stock", tags=["Stock Operations"])
@@ -140,3 +141,13 @@ def get_stock_movements_ledger(
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.get("/batches", response_model=list[dict[str, Any]])
+def get_batches(
+    item_id: Optional[int] = Query(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    """Retrieve all active batches, optionally filtered by item_id."""
+    return list_item_batches(db=db, item_id=item_id)

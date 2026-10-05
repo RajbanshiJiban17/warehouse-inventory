@@ -9,27 +9,50 @@ import {
   Calendar,
   User,
   Receipt,
+  Boxes,
+  X,
+  Tag,
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Item, Location, StockOutResponse } from '../types';
 import { useToast } from '../components/Toast';
-import { getTodayAD, convertADtoBS, formatBSDisplay } from '../services/nepaliDate';
+import {
+  getTodayAD,
+  convertADtoBS,
+  convertBStoAD,
+  formatBSDisplay,
+  formatADDisplay,
+  isValidBSDate,
+  isValidADDate,
+} from '../services/nepaliDate';
 
 export const ItemOut: React.FC = () => {
   const { showToast } = useToast();
 
-  // Header / Outward Voucher Info
+  // Header / Outward Voucher Info (Connected AD <-> BS)
   const [dateAD, setDateAD] = useState<string>(getTodayAD());
   const [dateBS, setDateBS] = useState<string>(convertADtoBS(getTodayAD()));
   const [selectedLocation, setSelectedLocation] = useState('Floor');
   const [receiverName, setReceiverName] = useState('');
   const [locations, setLocations] = useState<Location[]>([]);
 
-  // Scanner & Item Lookup
+  // Item List Catalog (For dropdown autocomplete by Code & Name)
+  const [allItems, setAllItems] = useState<Item[]>([]);
+  const [loadingItems, setLoadingItems] = useState(false);
+
+  // Separate Inputs: Code, Name, Barcode
+  const [inputItemCode, setInputItemCode] = useState('');
+  const [inputItemName, setInputItemName] = useState('');
   const [scannedBarcode, setScannedBarcode] = useState('');
   const [activeItem, setActiveItem] = useState<Item | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [lookupError, setLookupError] = useState('');
+  const [showItemModal, setShowItemModal] = useState(false);
+  const [modalSearch, setModalSearch] = useState('');
+
+  // Item Batches
+  const [itemBatches, setItemBatches] = useState<any[]>([]);
+  const [selectedBatchNo, setSelectedBatchNo] = useState('');
 
   // Line Item Details
   const [quantity, setQuantity] = useState('');
@@ -42,6 +65,7 @@ export const ItemOut: React.FC = () => {
   const [loadingHistory, setLoadingHistory] = useState(true);
 
   // Focus Refs
+  const itemCodeInputRef = useRef<HTMLInputElement>(null);
   const barcodeInputRef = useRef<HTMLInputElement>(null);
   const quantityInputRef = useRef<HTMLInputElement>(null);
 
@@ -53,10 +77,21 @@ export const ItemOut: React.FC = () => {
   const isInsufficient = activeItem !== null && requestedQty > currentAvailable;
   const remainingPreview = currentAvailable - requestedQty;
 
+  // --- Bi-directional Date Synchronization ---
   const handleDateADChange = (newAD: string) => {
     setDateAD(newAD);
-    const convertedBS = convertADtoBS(newAD);
-    if (convertedBS) setDateBS(convertedBS);
+    if (newAD && isValidADDate(newAD)) {
+      const convertedBS = convertADtoBS(newAD);
+      if (convertedBS) setDateBS(convertedBS);
+    }
+  };
+
+  const handleDateBSChange = (newBS: string) => {
+    setDateBS(newBS);
+    if (newBS && isValidBSDate(newBS)) {
+      const convertedAD = convertBStoAD(newBS);
+      if (convertedAD) setDateAD(convertedAD);
+    }
   };
 
   const fetchLocations = async () => {
@@ -76,10 +111,22 @@ export const ItemOut: React.FC = () => {
     }
   };
 
+  const fetchItemsCatalog = async () => {
+    setLoadingItems(true);
+    try {
+      const res = await api.getItems({ limit: 100, is_active: true });
+      setAllItems(res.items || []);
+    } catch {
+      // Ignored
+    } finally {
+      setLoadingItems(false);
+    }
+  };
+
   const fetchHistory = async () => {
     try {
       const data = await api.getStockOutHistory({ limit: 20 });
-      setRecentEntries(data.items);
+      setRecentEntries(data.items || []);
     } catch {
       // Ignored
     } finally {
@@ -88,30 +135,146 @@ export const ItemOut: React.FC = () => {
   };
 
   useEffect(() => {
-    barcodeInputRef.current?.focus();
     fetchLocations();
+    fetchItemsCatalog();
     fetchHistory();
   }, []);
 
+  // Fetch batches when active item changes
+  useEffect(() => {
+    if (activeItem?.id) {
+      api
+        .getBatches(activeItem.id)
+        .then((batches) => {
+          setItemBatches(batches || []);
+          if (batches && batches.length > 0) {
+            setSelectedBatchNo(batches[0].batchNo);
+          } else {
+            setSelectedBatchNo('');
+          }
+        })
+        .catch(() => {
+          setItemBatches([]);
+          setSelectedBatchNo('');
+        });
+    } else {
+      setItemBatches([]);
+      setSelectedBatchNo('');
+    }
+  }, [activeItem]);
+
+  const applySelectedItem = (item: Item) => {
+    setActiveItem(item);
+    setInputItemCode(item.itemCode);
+    setInputItemName(item.itemName);
+    setScannedBarcode(item.barcode);
+    setLookupError('');
+    setTimeout(() => {
+      quantityInputRef.current?.focus();
+    }, 50);
+  };
+
+  const handleClearSelectedItem = () => {
+    setActiveItem(null);
+    setInputItemCode('');
+    setInputItemName('');
+    setScannedBarcode('');
+    setLookupError('');
+    setQuantity('');
+    setUnitPrice('');
+    setItemBatches([]);
+    setSelectedBatchNo('');
+  };
+
+  // 1. Separate Item Code Lookup
+  const handleItemCodeSelect = async (code: string) => {
+    setInputItemCode(code);
+    const trimmed = code.trim();
+    if (!trimmed) {
+      if (!inputItemName && !scannedBarcode) setActiveItem(null);
+      return;
+    }
+
+    const matched = allItems.find((it) => it.itemCode.toLowerCase() === trimmed.toLowerCase());
+    if (matched) {
+      applySelectedItem(matched);
+      return;
+    }
+
+    setIsSearching(true);
+    setLookupError('');
+    try {
+      const item = await api.lookupItemCode(trimmed);
+      applySelectedItem(item);
+    } catch {
+      setLookupError(`Item Code '${trimmed}' not found.`);
+      setActiveItem(null);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // 2. Separate Item Name Lookup
+  const handleItemNameSelect = async (name: string) => {
+    setInputItemName(name);
+    const trimmed = name.trim();
+    if (!trimmed) {
+      if (!inputItemCode && !scannedBarcode) setActiveItem(null);
+      return;
+    }
+
+    const matched = allItems.find((it) => it.itemName.toLowerCase() === trimmed.toLowerCase());
+    if (matched) {
+      applySelectedItem(matched);
+      return;
+    }
+
+    setIsSearching(true);
+    setLookupError('');
+    try {
+      const res = await api.getItems({ search: trimmed, limit: 5 });
+      if (res.items && res.items.length > 0) {
+        const exact = res.items.find((it: Item) => it.itemName.toLowerCase() === trimmed.toLowerCase()) || res.items[0];
+        applySelectedItem(exact);
+      } else {
+        setLookupError(`Item Name '${trimmed}' not found.`);
+        setActiveItem(null);
+      }
+    } catch {
+      setLookupError(`Error searching for '${trimmed}'.`);
+      setActiveItem(null);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // 3. Separate Barcode Lookup
   const handleBarcodeLookup = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const code = scannedBarcode.trim();
     if (!code) return;
 
+    const matched = allItems.find(
+      (it) => it.barcode.toLowerCase() === code.toLowerCase() || it.itemCode.toLowerCase() === code.toLowerCase()
+    );
+    if (matched) {
+      applySelectedItem(matched);
+      return;
+    }
+
     setIsSearching(true);
     setLookupError('');
-    setActiveItem(null);
-
     try {
       const item = await api.lookupBarcode(code);
-      setActiveItem(item);
-      setLookupError('');
-      setTimeout(() => {
-        quantityInputRef.current?.focus();
-      }, 50);
+      applySelectedItem(item);
     } catch {
-      setLookupError('Item not found for this barcode.');
-      setActiveItem(null);
+      try {
+        const itemByCode = await api.lookupItemCode(code);
+        applySelectedItem(itemByCode);
+      } catch {
+        setLookupError(`Item not found for barcode '${code}'.`);
+        setActiveItem(null);
+      }
     } finally {
       setIsSearching(false);
     }
@@ -119,7 +282,10 @@ export const ItemOut: React.FC = () => {
 
   const handleSubmitStockOut = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeItem) return;
+    if (!activeItem) {
+      showToast('error', 'Select Item', 'Please select or scan an item first.');
+      return;
+    }
 
     if (requestedQty <= 0) {
       showToast('error', 'Invalid Quantity', 'Quantity must be greater than zero.');
@@ -140,223 +306,302 @@ export const ItemOut: React.FC = () => {
       const result = await api.stockOut({
         itemId: activeItem.id,
         quantity: requestedQty,
-        location: selectedLocation.trim(),
+        location: selectedLocation,
         dateAD: dateAD || undefined,
         dateBS: dateBS || undefined,
         receiverName: receiverName.trim() || undefined,
         unitPrice: numPrice > 0 ? numPrice : 0,
         amount: calculatedAmount > 0 ? calculatedAmount : 0,
+        batchNo: selectedBatchNo.trim() || undefined,
         remark: remark.trim() || undefined,
         idempotencyKey: `OUT_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       });
 
-      showToast(
-        'success',
-        'Stock Issued Successfully!',
-        `Issued ${requestedQty} ${activeItem.unitName || 'units'}. Remaining: ${result.balanceAfter}`
-      );
+      if (result.isLowStockWarning) {
+        showToast(
+          'warning',
+          'Low Stock Warning!',
+          `Remaining balance for ${activeItem.itemName} is now ${result.balanceAfter} (At or below threshold).`
+        );
+      } else {
+        showToast(
+          'success',
+          'Stock Issued Successfully!',
+          `Issued ${requestedQty} ${activeItem.unitName || 'units'} to ${selectedLocation}. Balance: ${result.balanceAfter}`
+        );
+      }
 
-      // Fast Reset for successive scanning
-      setScannedBarcode('');
-      setActiveItem(null);
-      setQuantity('');
-      setUnitPrice('');
+      handleClearSelectedItem();
       setRemark('');
-      setLookupError('');
       fetchHistory();
+      fetchItemsCatalog();
 
       setTimeout(() => {
-        barcodeInputRef.current?.focus();
+        itemCodeInputRef.current?.focus();
       }, 50);
     } catch (err: any) {
-      showToast('error', 'Stock Out Failed', err.message || 'Could not process deduction.');
+      showToast('error', 'Dispatch Failed', err.message || 'Could not process dispatch.');
     } finally {
       setIsSaving(false);
     }
   };
 
+  const filteredCatalogItems = allItems.filter(
+    (it) =>
+      it.itemName.toLowerCase().includes(modalSearch.toLowerCase()) ||
+      it.itemCode.toLowerCase().includes(modalSearch.toLowerCase()) ||
+      it.barcode.toLowerCase().includes(modalSearch.toLowerCase()) ||
+      (it.categoryName && it.categoryName.toLowerCase().includes(modalSearch.toLowerCase()))
+  );
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto">
-      {/* Page Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-white flex items-center space-x-2.5">
-          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            <ArrowUpRight className="w-6 h-6" />
-          </div>
-          <span>Item Out (Stock Deduction & Dispatch)</span>
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Issue inventory items with real-time stock availability verification, AD / BS date synchronization, and ledger updates.
-        </p>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-white flex items-center space-x-2.5">
+            <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+              <ArrowUpRight className="w-6 h-6" />
+            </div>
+            <span>Item Out (Stock Dispatch & Goods Issue)</span>
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Issue stock by Item Code, Name, or Barcode with synchronized AD/BS dates and real-time inventory checks.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setShowItemModal(true)}
+          className="flex items-center space-x-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-brand-400 border border-slate-700 rounded-xl text-xs font-bold transition shadow-md"
+        >
+          <Boxes className="w-4 h-4" />
+          <span>Browse Item Catalog</span>
+        </button>
       </div>
 
       {/* Main Issue Card */}
       <div className="bg-slate-950 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
-        {/* HEADER SECTION: Dates, Destination Location, Receiver */}
+        {/* HEADER SECTION: Dates (Connected AD & BS), Destination, Receiver */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pb-4 border-b border-slate-800/80">
           {/* Date AD */}
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center space-x-1">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1 flex items-center space-x-1.5">
               <Calendar className="w-3.5 h-3.5 text-brand-400" />
-              <span>Date (AD) *</span>
+              <span>Date (AD - English) *</span>
             </label>
             <input
               type="date"
               required
               value={dateAD}
               onChange={(e) => handleDateADChange(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-semibold focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-semibold focus:outline-none focus:border-brand-500 transition"
             />
-            <span className="text-[10px] text-slate-500">System AD Date</span>
+            <span className="text-[10px] text-slate-500">{formatADDisplay(dateAD) || 'System Date'}</span>
           </div>
 
-          {/* Date BS */}
+          {/* Date BS (Connected) */}
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center space-x-1">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1 flex items-center space-x-1.5">
               <Calendar className="w-3.5 h-3.5 text-amber-400" />
-              <span>Date (BS) *</span>
+              <span>Date (BS - नेपाली मिति) *</span>
             </label>
             <input
               type="text"
-              placeholder="e.g. 2083-06-16"
+              placeholder="e.g. 2083-06-19"
               value={dateBS}
-              onChange={(e) => setDateBS(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-amber-300 text-xs font-mono font-semibold focus:outline-none focus:border-amber-500"
+              onChange={(e) => handleDateBSChange(e.target.value)}
+              className="w-full px-3 py-2 bg-slate-900 border border-amber-600/60 rounded-xl text-amber-300 text-xs font-mono font-bold focus:outline-none focus:border-amber-400 transition"
             />
-            <span className="text-[10px] text-amber-500/80">{formatBSDisplay(dateBS) || 'Nepali Date'}</span>
+            <span className="text-[10px] text-amber-400 font-medium block truncate">
+              {formatBSDisplay(dateBS) || 'Nepali BS Date'}
+            </span>
           </div>
 
-          {/* Destination / Location */}
+          {/* Destination Location */}
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center space-x-1">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1 flex items-center space-x-1.5">
               <MapPin className="w-3.5 h-3.5 text-rose-400" />
-              <span>Destination / Location *</span>
+              <span>Issued To (Location) *</span>
             </label>
             <select
               value={selectedLocation}
               onChange={(e) => setSelectedLocation(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-semibold focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-semibold focus:outline-none focus:border-brand-500 transition"
             >
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.name}>
                   {loc.name}
                 </option>
               ))}
-              <option value="Customer Sale">Customer Direct Sale</option>
-              <option value="Damaged / Scrap">Damaged / Scrap Write-off</option>
             </select>
           </div>
 
-          {/* Receiver / Issued To */}
+          {/* Receiver / Department */}
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 flex items-center space-x-1">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1 flex items-center space-x-1.5">
               <User className="w-3.5 h-3.5 text-blue-400" />
-              <span>Issued To / Receiver</span>
+              <span>Receiver / Department</span>
             </label>
             <input
               type="text"
-              placeholder="e.g. Retail Counter / Customer"
+              placeholder="e.g. Counter Staff, Ram K."
               value={receiverName}
               onChange={(e) => setReceiverName(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-amber-500"
+              className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs focus:outline-none focus:border-brand-500 transition"
             />
           </div>
         </div>
 
-        {/* SCANNER BAR */}
-        <div>
-          <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-            Scan Barcode or Type Code (Press Enter)
-          </label>
-          <form onSubmit={handleBarcodeLookup} className="flex gap-2">
-            <div className="relative flex-1">
-              <Barcode className="w-5 h-5 absolute left-3.5 top-2.5 text-amber-400" />
+        {/* SEPARATE ITEM INPUTS: Code Xuttai, Name Xuttai, Barcode Xuttai */}
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
+              <Boxes className="w-4 h-4 text-brand-400" />
+              <span>Select Item to Issue (Code, Name वा Barcode बाट खोज्नुहोस्)</span>
+            </span>
+            {activeItem && (
+              <button
+                type="button"
+                onClick={handleClearSelectedItem}
+                className="text-xs text-rose-400 hover:text-rose-300 flex items-center space-x-1 font-semibold"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Clear / Select Another Item</span>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* 1. Item Code Input */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Item Code (संकेत कोड)
+              </label>
               <input
-                ref={barcodeInputRef}
+                ref={itemCodeInputRef}
                 type="text"
-                placeholder="Scan item barcode with USB reader or type barcode..."
-                value={scannedBarcode}
-                onChange={(e) => setScannedBarcode(e.target.value)}
-                className="w-full pl-11 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 font-mono text-base tracking-wider"
+                list="out-item-code-list"
+                placeholder="e.g. ITM-0001, ELEC-001..."
+                value={inputItemCode}
+                onChange={(e) => handleItemCodeSelect(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-900 border border-brand-500/50 rounded-xl text-white text-sm font-mono font-bold focus:outline-none focus:border-brand-400"
               />
+              <datalist id="out-item-code-list">
+                {allItems.map((item) => (
+                  <option key={`out-code-${item.id}`} value={item.itemCode}>
+                    {item.itemCode} — {item.itemName} (Stock: {item.quantity})
+                  </option>
+                ))}
+              </datalist>
             </div>
-            <button
-              type="submit"
-              disabled={isSearching || !scannedBarcode.trim()}
-              className="px-5 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-sm font-semibold flex items-center space-x-1.5 transition disabled:opacity-50"
-            >
-              <Search className="w-4 h-4" />
-              <span>{isSearching ? 'Searching...' : 'Lookup'}</span>
-            </button>
-          </form>
+
+            {/* 2. Item Name Input */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Item Name (सामानको नाम)
+              </label>
+              <input
+                type="text"
+                list="out-item-name-list"
+                placeholder="e.g. Wireless Mouse, Sugar..."
+                value={inputItemName}
+                onChange={(e) => handleItemNameSelect(e.target.value)}
+                className="w-full px-3 py-2.5 bg-slate-900 border border-brand-500/50 rounded-xl text-white text-sm font-semibold focus:outline-none focus:border-brand-400"
+              />
+              <datalist id="out-item-name-list">
+                {allItems.map((item) => (
+                  <option key={`out-name-${item.id}`} value={item.itemName}>
+                    {item.itemName} ({item.itemCode}) — Stock: {item.quantity}
+                  </option>
+                ))}
+              </datalist>
+            </div>
+
+            {/* 3. Barcode Scanner Input */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Barcode (बारकोड स्क्यानर)
+              </label>
+              <form onSubmit={handleBarcodeLookup} className="flex gap-1.5">
+                <div className="relative flex-1">
+                  <Barcode className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                  <input
+                    ref={barcodeInputRef}
+                    type="text"
+                    placeholder="Scan with reader..."
+                    value={scannedBarcode}
+                    onChange={(e) => setScannedBarcode(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-brand-500"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isSearching || !scannedBarcode.trim()}
+                  className="px-3.5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold transition disabled:opacity-50"
+                >
+                  <Search className="w-4 h-4" />
+                </button>
+              </form>
+            </div>
+          </div>
         </div>
 
-        {/* Not Found Banner */}
+        {/* Error Banner */}
         {lookupError && (
-          <div className="p-4 bg-rose-950/70 border border-rose-800 rounded-xl text-rose-200 flex items-center space-x-2.5 text-sm">
-            <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0" />
+          <div className="p-3 bg-rose-950/70 border border-rose-800 rounded-xl text-rose-200 text-xs font-semibold flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
             <span>{lookupError}</span>
           </div>
         )}
 
-        {/* Active Item Specs & Live Balance */}
+        {/* Active Item Card */}
         {activeItem && (
-          <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+          <div className="p-4 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border border-brand-500/30 rounded-2xl shadow-lg space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-800/80 pb-2.5">
               <div>
-                <h3 className="text-base font-bold text-white">{activeItem.itemName}</h3>
-                <div className="text-xs font-mono text-amber-400">{activeItem.itemCode}</div>
+                <div className="flex items-center space-x-2">
+                  <span className="font-mono text-xs font-bold text-brand-400 bg-brand-950/80 px-2 py-0.5 rounded-md border border-brand-800/50">
+                    {activeItem.itemCode}
+                  </span>
+                  <h3 className="text-base font-extrabold text-white">{activeItem.itemName}</h3>
+                </div>
+                <div className="text-xs text-slate-400 mt-0.5">
+                  Barcode: <span className="font-mono text-slate-300 font-semibold">{activeItem.barcode}</span>
+                </div>
               </div>
               <div className="text-right">
                 <div className="text-[11px] text-slate-400 uppercase font-semibold">Available Stock</div>
-                <div
-                  className={`text-xl font-extrabold ${
-                    currentAvailable <= 0
-                      ? 'text-rose-400'
-                      : currentAvailable <= Number(activeItem.minStockLevel)
-                      ? 'text-amber-400'
-                      : 'text-white'
-                  }`}
-                >
-                  {currentAvailable.toLocaleString()} <span className="text-xs font-normal text-slate-400">{activeItem.unitName}</span>
+                <div className="text-xl font-black text-emerald-400">
+                  {Number(activeItem.quantity).toLocaleString()}{' '}
+                  <span className="text-xs font-normal text-slate-400">{activeItem.unitName || 'units'}</span>
                 </div>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-400 pt-1">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs text-slate-400 pt-0.5">
               <div>
-                Category: <span className="text-slate-200 font-semibold">{activeItem.categoryName}</span>
+                Category: <span className="text-slate-200 font-semibold">{activeItem.categoryName || '—'}</span>
               </div>
               <div>
-                Unit: <span className="text-slate-200 font-semibold">{activeItem.unitName}</span>
+                Unit: <span className="text-slate-200 font-semibold">{activeItem.unitName || 'pcs'}</span>
               </div>
               <div>
-                Barcode: <span className="text-slate-200 font-mono">{activeItem.barcode}</span>
+                Min Alert Level: <span className="text-slate-200 font-mono">{activeItem.minStockLevel}</span>
               </div>
               <div>
-                Min Alert: <span className="text-slate-200 font-mono">{activeItem.minStockLevel}</span>
+                Active Batches: <span className="text-amber-400 font-bold">{itemBatches.length}</span>
               </div>
             </div>
           </div>
         )}
 
-        {/* Live Insufficient Stock Alert */}
-        {isInsufficient && (
-          <div className="p-4 bg-rose-950/80 border border-rose-700 rounded-xl text-rose-200 text-sm flex items-start space-x-3">
-            <AlertCircle className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold">Insufficient stock!</span> You requested {requestedQty} {activeItem?.unitName}, but only{' '}
-              {currentAvailable} is available in warehouse inventory.
-            </div>
-          </div>
-        )}
-
-        {/* LINE ITEM ENTRY & AMOUNT FORM */}
-        <form onSubmit={handleSubmitStockOut} className="space-y-4">
+        {/* LINE ITEM QUANTITY, BATCH & AMOUNT */}
+        <form onSubmit={handleSubmitStockOut} className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Issue Quantity */}
+            {/* Quantity */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
                 Issue Quantity *
               </label>
               <input
@@ -366,38 +611,56 @@ export const ItemOut: React.FC = () => {
                 min="0.01"
                 step="any"
                 disabled={!activeItem}
-                placeholder={activeItem ? `Max ${currentAvailable}...` : 'Scan barcode first'}
+                placeholder={activeItem ? `Qty in ${activeItem.unitName || 'units'}...` : 'Select item first'}
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
-                className={`w-full px-4 py-2.5 bg-slate-900 border rounded-xl text-white text-base font-bold focus:outline-none disabled:opacity-40 ${
-                  isInsufficient ? 'border-rose-500 text-rose-300' : 'border-slate-700 focus:border-amber-500'
+                className={`w-full px-4 py-2.5 bg-slate-900 border rounded-xl text-white text-base font-bold focus:outline-none transition disabled:opacity-40 ${
+                  isInsufficient
+                    ? 'border-rose-500 focus:border-rose-400 ring-1 ring-rose-500/30'
+                    : 'border-slate-700 focus:border-brand-500'
                 }`}
               />
-              {activeItem && !isInsufficient && requestedQty > 0 && (
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Remaining after issue: <strong>{remainingPreview}</strong> {activeItem.unitName}
-                </p>
+              {isInsufficient && (
+                <span className="text-[11px] text-rose-400 font-bold block mt-1">
+                  Exceeds warehouse stock ({currentAvailable})!
+                </span>
               )}
             </div>
 
-            {/* Unit */}
+            {/* Batch Selector (if batches exist) */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Unit of Measure
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5 flex items-center space-x-1">
+                <Tag className="w-3.5 h-3.5 text-amber-400" />
+                <span>Select Batch (Optional)</span>
               </label>
-              <input
-                type="text"
-                readOnly
-                disabled
-                value={activeItem?.unitName || '—'}
-                className="w-full px-4 py-2.5 bg-slate-900/60 border border-slate-800 rounded-xl text-slate-300 text-sm font-semibold focus:outline-none"
-              />
+              {itemBatches.length > 0 ? (
+                <select
+                  value={selectedBatchNo}
+                  onChange={(e) => setSelectedBatchNo(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-900 border border-amber-600/50 rounded-xl text-amber-300 text-xs font-mono font-bold focus:outline-none focus:border-amber-400"
+                >
+                  <option value="">General (No Batch Assigned)</option>
+                  {itemBatches.map((b) => (
+                    <option key={`batch-${b.id}`} value={b.batchNo}>
+                      {b.batchNo} (Qty: {b.quantity}{b.expiryDate ? ` | Exp: ${b.expiryDate}` : ''})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  placeholder="e.g. BATCH-01"
+                  value={selectedBatchNo}
+                  onChange={(e) => setSelectedBatchNo(e.target.value)}
+                  className="w-full px-3 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-mono focus:outline-none focus:border-brand-500"
+                />
+              )}
             </div>
 
-            {/* Rate / Valuation Price */}
+            {/* Rate / Unit Price */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Rate / Unit Price (NPR)
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                Issue Rate (NPR)
               </label>
               <input
                 type="number"
@@ -407,150 +670,146 @@ export const ItemOut: React.FC = () => {
                 placeholder="Rate per unit..."
                 value={unitPrice}
                 onChange={(e) => setUnitPrice(e.target.value)}
-                className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-base font-bold focus:outline-none focus:border-amber-500 disabled:opacity-40"
+                className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-base font-bold focus:outline-none focus:border-brand-500 disabled:opacity-40"
               />
             </div>
 
             {/* Total Amount */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-                Total Amount (Qty × Rate)
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+                Total Valuation (Qty × Rate)
               </label>
-              <div className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-amber-400 font-extrabold text-base flex items-center justify-between">
-                <span>NPR</span>
-                <span>{calculatedAmount > 0 ? calculatedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 }) : '0.00'}</span>
+              <div className="w-full px-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-rose-400 font-black text-base flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-400">NPR</span>
+                <span>
+                  {calculatedAmount > 0
+                    ? calculatedAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })
+                    : '0.00'}
+                </span>
               </div>
             </div>
           </div>
 
-          {/* Remark */}
+          {/* Remarks */}
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1.5">
-              Issue Remark / Requisition Note (Optional)
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-1.5">
+              Issue Voucher Remarks
             </label>
             <input
               type="text"
-              disabled={!activeItem}
-              placeholder="e.g. Dispatched for Floor Display / Sale to Client"
+              placeholder="e.g. Requisition #305, issued for retail counter display..."
               value={remark}
               onChange={(e) => setRemark(e.target.value)}
-              className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-amber-500 disabled:opacity-40"
+              className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-brand-500"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={!activeItem || isInsufficient || isSaving || requestedQty <= 0}
-            className="w-full flex items-center justify-center space-x-2 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold shadow-lg shadow-amber-600/20 transition disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            <span>{isSaving ? 'Processing Deduction...' : 'Confirm Stock Deduction (Issue)'}</span>
-          </button>
+          {/* Stock Balance Preview Banner */}
+          {activeItem && requestedQty > 0 && !isInsufficient && (
+            <div className="p-3 bg-emerald-950/60 border border-emerald-800 rounded-xl flex items-center justify-between text-xs">
+              <span className="text-emerald-300">
+                Current: <strong>{currentAvailable}</strong> → Remaining After Issue:{' '}
+                <strong>{remainingPreview}</strong> {activeItem.unitName}
+              </span>
+              {remainingPreview <= Number(activeItem.minStockLevel) && (
+                <span className="text-amber-400 font-bold">⚠️ Warning: Will trigger low stock alert!</span>
+              )}
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex items-center justify-end space-x-3 pt-2">
+            <button
+              type="button"
+              onClick={handleClearSelectedItem}
+              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold rounded-xl transition"
+            >
+              Reset
+            </button>
+            <button
+              type="submit"
+              disabled={isSaving || !activeItem || requestedQty <= 0 || isInsufficient}
+              className="px-6 py-2.5 bg-rose-600 hover:bg-rose-500 text-white text-sm font-extrabold rounded-xl shadow-lg shadow-rose-600/30 flex items-center space-x-2 transition disabled:opacity-50"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{isSaving ? 'Issuing Stock...' : 'Issue Stock (निकासी गर्नुहोस्)'}</span>
+            </button>
+          </div>
         </form>
       </div>
 
-      {/* TALA TABLE: S.N, Date, Item Name, Barcode, Qty, Unit, Rate, Amount, Location, Receiver, Balance After, Remark */}
-      <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl">
-        <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900/60">
-          <div className="flex items-center space-x-2 text-white font-bold text-base">
-            <Receipt className="w-5 h-5 text-amber-400" />
-            <span>Outbound Issues Table (हालै निकासी भएको सामानहरू)</span>
+      {/* RECENT OUTWARD TRANSACTIONS */}
+      <div className="bg-slate-950 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+        <div className="p-4 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <Receipt className="w-5 h-5 text-rose-400" />
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Recent Stock Out Entries</h2>
           </div>
-          <span className="text-xs text-slate-400">Total Entries: {recentEntries.length}</span>
+          <span className="text-xs text-slate-400">Total Recorded: {recentEntries.length}</span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-slate-900/90 text-slate-400 text-xs uppercase tracking-wider border-b border-slate-800">
+          <table className="w-full text-left text-xs text-slate-300">
+            <thead className="bg-slate-900 text-slate-400 uppercase tracking-wider border-b border-slate-800">
               <tr>
-                <th className="px-4 py-3.5 text-center">S.N</th>
-                <th className="px-4 py-3.5">Date (AD / BS)</th>
-                <th className="px-4 py-3.5">Item Name</th>
-                <th className="px-4 py-3.5">Barcode</th>
-                <th className="px-4 py-3.5 text-right">Qty</th>
-                <th className="px-4 py-3.5 text-center">Unit</th>
-                <th className="px-4 py-3.5 text-right">Rate</th>
-                <th className="px-4 py-3.5 text-right">Amount</th>
-                <th className="px-4 py-3.5">Location</th>
-                <th className="px-4 py-3.5">Issued To</th>
-                <th className="px-4 py-3.5 text-right">Left Stock</th>
-                <th className="px-4 py-3.5">Remark</th>
+                <th className="px-4 py-3">Voucher Date</th>
+                <th className="px-4 py-3">Item Code</th>
+                <th className="px-4 py-3">Item Name</th>
+                <th className="px-4 py-3 text-right">Qty Issued</th>
+                <th className="px-4 py-3 text-right">Remaining Balance</th>
+                <th className="px-4 py-3">Batch No</th>
+                <th className="px-4 py-3">Issued To</th>
+                <th className="px-4 py-3">Receiver</th>
+                <th className="px-4 py-3">User</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 text-xs">
+            <tbody className="divide-y divide-slate-800/60">
               {loadingHistory ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-12 text-center text-slate-500">
-                    Loading outbound issues...
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                    Loading recent outward entries...
                   </td>
                 </tr>
               ) : recentEntries.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-12 text-center text-slate-500">
-                    No outbound issues recorded yet.
+                  <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
+                    No outward dispatches recorded yet.
                   </td>
                 </tr>
               ) : (
-                recentEntries.map((entry, idx) => (
-                  <tr key={entry.id} className="hover:bg-slate-900/50 transition">
-                    {/* S.N automatic 1, 2, 3... */}
-                    <td className="px-4 py-3.5 text-center font-bold text-slate-400">{idx + 1}</td>
-
-                    {/* Date AD / BS */}
-                    <td className="px-4 py-3.5">
-                      <div className="font-semibold text-white">
-                        {entry.dateAD || new Date(entry.createdAt).toISOString().split('T')[0]}
-                      </div>
-                      {entry.dateBS && <div className="text-[11px] text-amber-400 font-mono">{entry.dateBS}</div>}
+                recentEntries.map((entry) => (
+                  <tr key={entry.id} className="hover:bg-slate-900/40 transition">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <div className="font-semibold text-white">{entry.dateAD || '—'}</div>
+                      <div className="text-[10px] text-amber-400 font-mono">{entry.dateBS || '—'}</div>
                     </td>
-
-                    {/* Item Name */}
-                    <td className="px-4 py-3.5">
-                      <div className="font-semibold text-white">{entry.itemName}</div>
-                      <div className="text-[11px] text-amber-400 font-mono">{entry.itemCode}</div>
+                    <td className="px-4 py-3 font-mono font-bold text-brand-400 whitespace-nowrap">
+                      {entry.itemCode}
                     </td>
-
-                    {/* Barcode */}
-                    <td className="px-4 py-3.5 font-mono text-slate-400">{entry.barcode}</td>
-
-                    {/* Qty */}
-                    <td className="px-4 py-3.5 text-right font-extrabold text-amber-400 text-sm">
-                      -{Number(entry.quantity).toLocaleString()}
+                    <td className="px-4 py-3 font-semibold text-white whitespace-nowrap">{entry.itemName}</td>
+                    <td className="px-4 py-3 text-right font-extrabold text-rose-400 whitespace-nowrap">
+                      -{Number(entry.quantity).toLocaleString()}{' '}
+                      <span className="text-[10px] font-normal text-slate-400">{entry.unitName || 'pcs'}</span>
                     </td>
-
-                    {/* Unit */}
-                    <td className="px-4 py-3.5 text-center text-slate-400">{entry.unitName || 'pcs'}</td>
-
-                    {/* Rate */}
-                    <td className="px-4 py-3.5 text-right text-slate-300">
-                      {entry.unitPrice ? Number(entry.unitPrice).toLocaleString() : '—'}
+                    <td className="px-4 py-3 text-right font-bold text-white whitespace-nowrap">
+                      {Number(entry.balanceAfter).toLocaleString()}
                     </td>
-
-                    {/* Amount */}
-                    <td className="px-4 py-3.5 text-right font-bold text-white">
-                      {entry.amount ? Number(entry.amount).toLocaleString(undefined, { minimumFractionDigits: 2 }) : '—'}
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      {entry.batchNo ? (
+                        <span className="font-mono font-bold text-amber-300 bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-800/40">
+                          {entry.batchNo}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500">—</span>
+                      )}
                     </td>
-
-                    {/* Location */}
-                    <td className="px-4 py-3.5">
-                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-900 text-slate-300 border border-slate-700">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <span className="bg-slate-800 text-slate-300 px-2 py-0.5 rounded text-[11px] font-semibold border border-slate-700">
                         {entry.location}
                       </span>
                     </td>
-
-                    {/* Issued To */}
-                    <td className="px-4 py-3.5 text-slate-300">{entry.receiverName || '—'}</td>
-
-                    {/* Balance Left */}
-                    <td className="px-4 py-3.5 text-right font-mono font-bold text-slate-200">
-                      {entry.balanceAfter}
-                      {entry.isLowStockWarning && (
-                        <span className="ml-1 text-[10px] text-amber-400 font-bold">(LOW)</span>
-                      )}
-                    </td>
-
-                    {/* Remark */}
-                    <td className="px-4 py-3.5 text-slate-400 truncate max-w-[150px]">{entry.remark || '—'}</td>
+                    <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{entry.receiverName || '—'}</td>
+                    <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{entry.createdByUsername || 'admin'}</td>
                   </tr>
                 ))
               )}
@@ -558,6 +817,82 @@ export const ItemOut: React.FC = () => {
           </table>
         </div>
       </div>
+
+      {/* CATALOG BROWSE MODAL */}
+      {showItemModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-950 border border-slate-800 rounded-2xl w-full max-w-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Boxes className="w-5 h-5 text-brand-400" />
+                <h3 className="text-base font-bold text-white">Select Item to Issue (वस्तु चयन)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowItemModal(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-900"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 border-b border-slate-800">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search items by code, name, category, or barcode..."
+                  value={modalSearch}
+                  onChange={(e) => setModalSearch(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-500"
+                  autoFocus
+                />
+              </div>
+            </div>
+
+            <div className="overflow-y-auto flex-1 divide-y divide-slate-800/60 p-2">
+              {loadingItems ? (
+                <div className="p-8 text-center text-slate-500 text-sm">Loading catalog items...</div>
+              ) : filteredCatalogItems.length === 0 ? (
+                <div className="p-8 text-center text-slate-500 text-sm">No matching items found.</div>
+              ) : (
+                filteredCatalogItems.map((item) => (
+                  <div
+                    key={`out-modal-${item.id}`}
+                    onClick={() => {
+                      applySelectedItem(item);
+                      setShowItemModal(false);
+                    }}
+                    className="p-3 hover:bg-slate-900/80 rounded-xl cursor-pointer flex items-center justify-between transition group"
+                  >
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono text-xs font-bold text-brand-400 bg-brand-950/80 px-2 py-0.5 rounded border border-brand-800/40">
+                          {item.itemCode}
+                        </span>
+                        <span className="font-semibold text-white group-hover:text-brand-300 transition">
+                          {item.itemName}
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 mt-1 flex items-center space-x-3">
+                        <span>Barcode: {item.barcode}</span>
+                        <span>Category: {item.categoryName || 'General'}</span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-bold text-white">
+                        {Number(item.quantity).toLocaleString()}{' '}
+                        <span className="text-xs text-slate-400 font-normal">{item.unitName}</span>
+                      </div>
+                      <span className="text-[11px] text-brand-400 group-hover:underline">Click to Select</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

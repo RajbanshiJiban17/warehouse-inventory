@@ -217,6 +217,11 @@ export const api = {
     return request<{ total: number; items: any[] }>(`/stock/out?${query.toString()}`);
   },
 
+  getBatches: (itemId?: number) => {
+    const q = itemId ? `?item_id=${itemId}` : '';
+    return request<any[]>(`/stock/batches${q}`);
+  },
+
   getMovements: (params: Record<string, any> = {}) => {
     const query = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
