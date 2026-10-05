@@ -66,44 +66,88 @@ def ensure_database_schema(target_engine: Any = engine) -> None:
     """Safely synchronizes table columns and creates tables across SQLite or PostgreSQL."""
     from sqlalchemy import inspect, text
     import app.models  # Ensures all models are registered with Base.metadata
+    
+    # 1. Create all missing tables first
     Base.metadata.create_all(bind=target_engine)
+    
+    # 2. Check and add/rename missing columns with case-sensitive quoting
     try:
         inspector = inspect(target_engine)
         table_names = inspector.get_table_names()
+        is_postgres = "postgres" in str(target_engine.url).lower()
 
-        if "stock_ins" in table_names:
-            existing_cols = {col["name"] for col in inspector.get_columns("stock_ins")}
-            stock_in_cols = [
-                ("dateAD", "VARCHAR(20)"),
-                ("dateBS", "VARCHAR(20)"),
-                ("supplierName", "VARCHAR(200)"),
-                ("receivedFrom", "VARCHAR(200)"),
-                ("location", "VARCHAR(100)"),
-                ("unitPrice", "NUMERIC(12, 2) DEFAULT 0.0"),
-                ("amount", "NUMERIC(14, 2) DEFAULT 0.0"),
-                ("batchNo", "VARCHAR(100)"),
-                ("mfgDate", "VARCHAR(50)"),
-                ("expiryDate", "VARCHAR(50)"),
-            ]
-            with target_engine.begin() as conn:
-                for col_name, col_type in stock_in_cols:
-                    if col_name not in existing_cols:
-                        conn.execute(text(f"ALTER TABLE stock_ins ADD COLUMN {col_name} {col_type}"))
+        # Schema prefixes to search in PostgreSQL
+        schemas_to_check = [None]
+        if is_postgres:
+            try:
+                available_schemas = inspector.get_schema_names()
+                if "inventory" in available_schemas:
+                    schemas_to_check.append("inventory")
+                if "public" in available_schemas:
+                    schemas_to_check.append("public")
+            except Exception:
+                pass
 
-        if "stock_outs" in table_names:
-            existing_cols = {col["name"] for col in inspector.get_columns("stock_outs")}
-            stock_out_cols = [
-                ("dateAD", "VARCHAR(20)"),
-                ("dateBS", "VARCHAR(20)"),
-                ("receiverName", "VARCHAR(200)"),
-                ("unitPrice", "NUMERIC(12, 2) DEFAULT 0.0"),
-                ("amount", "NUMERIC(14, 2) DEFAULT 0.0"),
-                ("batchNo", "VARCHAR(100)"),
-            ]
-            with target_engine.begin() as conn:
-                for col_name, col_type in stock_out_cols:
-                    if col_name not in existing_cols:
-                        conn.execute(text(f"ALTER TABLE stock_outs ADD COLUMN {col_name} {col_type}"))
+        stock_in_cols = [
+            ("dateAD", "VARCHAR(20)"),
+            ("dateBS", "VARCHAR(20)"),
+            ("supplierName", "VARCHAR(200)"),
+            ("receivedFrom", "VARCHAR(200)"),
+            ("location", "VARCHAR(100)"),
+            ("unitPrice", "NUMERIC(12, 2) DEFAULT 0.0"),
+            ("amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+            ("batchNo", "VARCHAR(100)"),
+            ("mfgDate", "VARCHAR(50)"),
+            ("expiryDate", "VARCHAR(50)"),
+        ]
+
+        stock_out_cols = [
+            ("dateAD", "VARCHAR(20)"),
+            ("dateBS", "VARCHAR(20)"),
+            ("receiverName", "VARCHAR(200)"),
+            ("unitPrice", "NUMERIC(12, 2) DEFAULT 0.0"),
+            ("amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+            ("batchNo", "VARCHAR(100)"),
+        ]
+
+        for s in schemas_to_check:
+            try:
+                tables = inspector.get_table_names(schema=s)
+            except Exception:
+                continue
+
+            tbl_prefix = f'"{s}".' if s else ""
+
+            if "stock_ins" in tables:
+                cols = {c["name"]: c for c in inspector.get_columns("stock_ins", schema=s)}
+                cols_lower = {name.lower(): name for name in cols}
+                
+                with target_engine.begin() as conn:
+                    for col_name, col_type in stock_in_cols:
+                        try:
+                            # If lowercase unquoted column exists in Postgres, rename to exact case
+                            if is_postgres and col_name.lower() in cols_lower and col_name not in cols:
+                                old_name = cols_lower[col_name.lower()]
+                                conn.execute(text(f'ALTER TABLE {tbl_prefix}stock_ins RENAME COLUMN "{old_name}" TO "{col_name}"'))
+                            elif col_name not in cols:
+                                conn.execute(text(f'ALTER TABLE {tbl_prefix}stock_ins ADD COLUMN "{col_name}" {col_type}'))
+                        except Exception:
+                            pass
+
+            if "stock_outs" in tables:
+                cols = {c["name"]: c for c in inspector.get_columns("stock_outs", schema=s)}
+                cols_lower = {name.lower(): name for name in cols}
+
+                with target_engine.begin() as conn:
+                    for col_name, col_type in stock_out_cols:
+                        try:
+                            if is_postgres and col_name.lower() in cols_lower and col_name not in cols:
+                                old_name = cols_lower[col_name.lower()]
+                                conn.execute(text(f'ALTER TABLE {tbl_prefix}stock_outs RENAME COLUMN "{old_name}" TO "{col_name}"'))
+                            elif col_name not in cols:
+                                conn.execute(text(f'ALTER TABLE {tbl_prefix}stock_outs ADD COLUMN "{col_name}" {col_type}'))
+                        except Exception:
+                            pass
     except Exception:
         pass
 
