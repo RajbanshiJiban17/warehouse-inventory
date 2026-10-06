@@ -164,6 +164,9 @@ export const api = {
     return request<any>('/items/import', { method: 'POST', body: formData });
   },
 
+  resetInventory: () =>
+    request<{ message: string; wipedCount: number }>('/items/reset-inventory', { method: 'POST' }),
+
   downloadImportTemplateUrl: (format: 'xlsx' | 'csv' = 'xlsx') =>
     `${getApiBase()}/items/import/template?format=${format}`,
 

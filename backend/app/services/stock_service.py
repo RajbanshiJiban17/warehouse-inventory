@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, update
@@ -470,7 +470,7 @@ def list_stock_out_entries(
     return results, total
 
 
-def list_item_batches(db: Session, item_id: Optional[int] = None) -> List[dict]:
+def list_item_batches(db: Session, item_id: Optional[int] = None) -> List[Dict[str, Any]]:
     query = db.query(ItemBatch).filter(ItemBatch.quantity > 0)
     if item_id:
         query = query.filter(ItemBatch.itemId == item_id)

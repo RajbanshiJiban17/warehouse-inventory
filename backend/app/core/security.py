@@ -2,11 +2,11 @@ import re
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
-# OWASP recommended settings for Argon2id
+# Optimized parameters for fast login and responsive verification (RFC 9106)
 ph = PasswordHasher(
-    time_cost=3,
-    memory_cost=65536,  # 64 MB
-    parallelism=4,
+    time_cost=1,
+    memory_cost=19456,  # 19 MB
+    parallelism=1,
     hash_len=32,
     salt_len=16,
 )

@@ -70,6 +70,10 @@ export const ItemIn: React.FC = () => {
   const [expiryDateAD, setExpiryDateAD] = useState('');
   const [expiryDateBS, setExpiryDateBS] = useState('');
   const [showBatchFields, setShowBatchFields] = useState(false);
+  const [itemBatches, setItemBatches] = useState<any[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [selectedBatchMode, setSelectedBatchMode] = useState<'existing' | 'new' | 'none'>('none');
+  const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // History / Recent Transactions
@@ -205,6 +209,93 @@ export const ItemIn: React.FC = () => {
     setLookupError('');
     setQuantity('');
     setUnitPrice('');
+    setItemBatches([]);
+    setSelectedBatchMode('none');
+    setSelectedBatchId(null);
+    setBatchNo('');
+    setMfgDateAD('');
+    setMfgDateBS('');
+    setExpiryDateAD('');
+    setExpiryDateBS('');
+  };
+
+  // Fetch existing batches for the selected item to enable batch top-up
+  useEffect(() => {
+    if (activeItem?.id) {
+      setLoadingBatches(true);
+      api
+        .getBatches(activeItem.id)
+        .then((batches) => {
+          setItemBatches(batches || []);
+          if (batches && batches.length > 0) {
+            // Default to topping up the first active batch
+            const first = batches[0];
+            setSelectedBatchMode('existing');
+            setSelectedBatchId(first.id);
+            setBatchNo(first.batchNo);
+            if (first.mfgDate) {
+              setMfgDateAD(first.mfgDate);
+              const bs = convertADtoBS(first.mfgDate);
+              if (bs) setMfgDateBS(bs);
+            }
+            if (first.expiryDate) {
+              setExpiryDateAD(first.expiryDate);
+              const bs = convertADtoBS(first.expiryDate);
+              if (bs) setExpiryDateBS(bs);
+            }
+            setShowBatchFields(true);
+          } else {
+            setSelectedBatchMode('new');
+            setSelectedBatchId(null);
+            setBatchNo('');
+          }
+        })
+        .catch(() => {
+          setItemBatches([]);
+          setSelectedBatchMode('new');
+          setSelectedBatchId(null);
+        })
+        .finally(() => setLoadingBatches(false));
+    } else {
+      setItemBatches([]);
+      setSelectedBatchMode('none');
+      setSelectedBatchId(null);
+      setBatchNo('');
+    }
+  }, [activeItem]);
+
+  const selectExistingBatch = (b: any) => {
+    setSelectedBatchMode('existing');
+    setSelectedBatchId(b.id);
+    setBatchNo(b.batchNo);
+    if (b.mfgDate) {
+      setMfgDateAD(b.mfgDate);
+      const bs = convertADtoBS(b.mfgDate);
+      if (bs) setMfgDateBS(bs);
+    } else {
+      setMfgDateAD('');
+      setMfgDateBS('');
+    }
+    if (b.expiryDate) {
+      setExpiryDateAD(b.expiryDate);
+      const bs = convertADtoBS(b.expiryDate);
+      if (bs) setExpiryDateBS(bs);
+    } else {
+      setExpiryDateAD('');
+      setExpiryDateBS('');
+    }
+    setShowBatchFields(true);
+  };
+
+  const switchToNewBatch = () => {
+    setSelectedBatchMode('new');
+    setSelectedBatchId(null);
+    setBatchNo('');
+    setMfgDateAD('');
+    setMfgDateBS('');
+    setExpiryDateAD('');
+    setExpiryDateBS('');
+    setShowBatchFields(true);
   };
 
   // 1. Separate Item Code Lookup / Selection
@@ -740,35 +831,152 @@ export const ItemIn: React.FC = () => {
           </div>
 
           {/* BATCH & EXPIRY TRACKING SECTION */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setShowBatchFields(!showBatchFields)}
-                className="text-xs text-brand-400 hover:text-brand-300 flex items-center space-x-1.5 font-bold"
-              >
-                <Tag className="w-4 h-4" />
-                <span>
-                  {showBatchFields
-                    ? '− Hide Batch & Expiry Tracking'
-                    : '+ Add Batch No / MFG Date / Expiry Date (Optional)'}
+          <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center space-x-2">
+                <Tag className="w-4 h-4 text-amber-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  Batch & Expiry Management (ब्याच तथा म्याद व्यवस्थापन)
                 </span>
-              </button>
+                {itemBatches.length > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[10px] font-bold text-amber-400">
+                    {itemBatches.length} Existing Batch(es)
+                  </span>
+                )}
+              </div>
 
-              {showBatchFields && (
+              <div className="flex items-center space-x-2">
+                {selectedBatchMode === 'new' && (
+                  <button
+                    type="button"
+                    onClick={handleGenerateBatchNo}
+                    className="inline-flex items-center space-x-1 text-xs text-amber-400 hover:text-amber-300 font-semibold"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Auto-Generate Batch No</span>
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={handleGenerateBatchNo}
-                  className="inline-flex items-center space-x-1 text-xs text-amber-400 hover:text-amber-300 font-semibold"
+                  onClick={() => setShowBatchFields(!showBatchFields)}
+                  className="text-xs text-brand-400 hover:text-brand-300 font-bold"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Auto-Generate Batch No</span>
+                  {showBatchFields ? '− Hide Details' : '+ Show Batch Controls'}
                 </button>
-              )}
+              </div>
             </div>
 
+            {/* Existing Batches Selector: Allows user to see which batch quantity is coming from and top-up directly */}
+            {activeItem && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-2">
+                  कुन ब्याचमा कति सामान छ? (Select Batch to Top-Up Qty or Create New)
+                </label>
+
+                {loadingBatches ? (
+                  <div className="p-3 text-xs text-slate-400 animate-pulse">Loading batches for this product...</div>
+                ) : itemBatches.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                    {itemBatches.map((b) => {
+                      const isSelected = selectedBatchMode === 'existing' && selectedBatchId === b.id;
+                      return (
+                        <div
+                          key={`batch-card-${b.id}`}
+                          onClick={() => selectExistingBatch(b)}
+                          className={`p-3 rounded-xl border cursor-pointer transition relative flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-950/50'
+                              : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                              {b.batchNo}
+                            </span>
+                            {isSelected ? (
+                              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full flex items-center space-x-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                <span>Top-Up Target</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 hover:text-slate-300">Click to Select</span>
+                            )}
+                          </div>
+                          <div className="mt-2 text-xs">
+                            <div className="text-slate-400">
+                              Current Stock: <strong className="text-white font-mono text-sm">{b.quantity}</strong> {activeItem.unitName || 'units'}
+                            </div>
+                            {b.expiryDate && (
+                              <div className="text-[11px] text-slate-400 mt-0.5">
+                                Exp: <span className="text-amber-200 font-mono">{b.expiryDate}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {/* Button to switch to creating a fresh batch */}
+                    <div
+                      onClick={switchToNewBatch}
+                      className={`p-3 rounded-xl border border-dashed cursor-pointer transition flex flex-col items-center justify-center text-center ${
+                        selectedBatchMode === 'new'
+                          ? 'bg-brand-950/40 border-brand-500 ring-2 ring-brand-500/40 shadow-lg'
+                          : 'bg-slate-950/40 border-slate-800 hover:border-slate-700 hover:bg-slate-900/40'
+                      }`}
+                    >
+                      <PlusCircle className="w-5 h-5 text-brand-400 mb-1" />
+                      <span className="text-xs font-bold text-brand-300">+ New Batch Number</span>
+                      <span className="text-[10px] text-slate-400">नयाँ ब्याच सिर्जना गर्नुहोस्</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between text-xs text-slate-400">
+                    <span>यो सामानको कुनै पुरानो ब्याच छैन (No existing batches found). Creating a new batch:</span>
+                    <button
+                      type="button"
+                      onClick={switchToNewBatch}
+                      className="px-2.5 py-1 bg-brand-600/30 text-brand-300 border border-brand-500/40 rounded-lg font-semibold hover:bg-brand-600/50"
+                    >
+                      + Create Batch
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Selected Batch Top-Up Summary Callout */}
+            {selectedBatchMode === 'existing' && selectedBatchId && (
+              <div className="p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-800/80 text-emerald-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center space-x-2.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+                  <div>
+                    <span className="font-bold text-white">ब्याचमा थपिँदैछ (Topping Up Batch):</span>{' '}
+                    <span className="font-mono font-bold text-amber-300">{batchNo}</span> — Current Batch Stock:{' '}
+                    <strong className="text-white">
+                      {itemBatches.find((b) => b.id === selectedBatchId)?.quantity || 0}
+                    </strong>{' '}
+                    + Receiving Qty: <strong className="text-white">{numQty}</strong> = Projected New Batch Stock:{' '}
+                    <strong className="text-white underline">
+                      {(
+                        Number(itemBatches.find((b) => b.id === selectedBatchId)?.quantity || 0) + numQty
+                      ).toFixed(2)}{' '}
+                      {activeItem?.unitName || 'units'}
+                    </strong>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={switchToNewBatch}
+                  className="text-xs text-amber-300 hover:text-white underline font-semibold flex-shrink-0"
+                >
+                  Create New Batch Instead
+                </button>
+              </div>
+            )}
+
             {showBatchFields && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-800/80">
                 {/* Batch Number */}
                 <div>
                   <label className="block text-xs font-bold text-slate-300 mb-1">
@@ -779,11 +987,19 @@ export const ItemIn: React.FC = () => {
                       type="text"
                       placeholder="e.g. BATCH-2026-A1"
                       value={batchNo}
-                      onChange={(e) => setBatchNo(e.target.value)}
+                      onChange={(e) => {
+                        setBatchNo(e.target.value);
+                        setSelectedBatchMode('new');
+                        setSelectedBatchId(null);
+                      }}
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono font-bold focus:outline-none focus:border-brand-500"
                     />
                   </div>
-                  <span className="text-[10px] text-slate-500">Optional: Auto-assigned if omitted</span>
+                  <span className="text-[10px] text-slate-500">
+                    {selectedBatchMode === 'existing'
+                      ? 'Selected from existing batch'
+                      : 'Optional: Auto-assigned if omitted'}
+                  </span>
                 </div>
 
                 {/* Manufacturing Date (Connected AD & BS) */}

@@ -9,7 +9,7 @@ from sqlalchemy import or_
 from app.models.item import Item
 from app.models.category import Category
 from app.models.unit import Unit
-from app.models.stock import StockMovement, MovementType
+from app.models.stock import StockMovement, MovementType, ItemBatch, StockIn, StockOut
 from app.models.audit import AuditAction
 from app.schemas.item import (
     ItemCreate,
@@ -195,6 +195,16 @@ def create_item(
         )
         db.add(opening_movement)
 
+        # Create initial batch so batch report matches stock
+        initial_batch = ItemBatch(
+            itemId=new_item.id,
+            batchNo=f"BAT-{new_item.itemCode}",
+            quantity=opening_qty,
+            initialQuantity=opening_qty,
+            unitPrice=Decimal("0.00"),
+        )
+        db.add(initial_batch)
+
     # 5. Record AuditLog
     log_audit_event(
         db=db,
@@ -345,6 +355,22 @@ def _normalize_key(key: str) -> str:
     if any(q in cleaned for q in ("quantity", "qty", "stock", "balance", "opening", "count", "closing", "inhand", "परिमाण", "मौज्दात")):
         return "openingQuantity"
 
+    # Batch Number (check before generic names)
+    if any(b in cleaned for b in ("batchno", "batchnum", "batchnumber", "lotno", "lotnum", "lotnumber", "batch", "lot", "ब्याच", "ब्याचनम्बर")):
+        return "batchNo"
+
+    # Manufacturing Date
+    if any(m in cleaned for m in ("mfgdate", "manufacturingdate", "mfgdt", "mfg", "उत्पादनमिति", "उत्पादन")):
+        return "mfgDate"
+
+    # Expiry Date
+    if any(e in cleaned for e in ("expirydate", "expiredate", "expdate", "expiry", "expire", "expdt", "समाप्तिमिति", "समाप्ति")):
+        return "expiryDate"
+
+    # Unit Price / Rate
+    if any(p in cleaned for p in ("unitprice", "rate", "cost", "buyingprice", "purchaseprice", "price", "दर", "मूल्य")):
+        return "unitPrice"
+
     # Item Code
     if any(cd in cleaned for cd in ("itemcode", "sku", "partno", "partnum", "partnumber", "model", "modelno", "productcode", "itemno", "itemnumber", "code", "संकेत")):
         return "itemCode"
@@ -374,7 +400,10 @@ def import_items_from_file(
     """
     filename_lower = filename.lower()
     raw_rows: List[Dict[str, Any]] = []
-    known_keys = {"itemName", "itemCode", "sn", "barcode", "categoryName", "unitName", "openingQuantity", "minStockLevel"}
+    known_keys = {
+        "itemName", "itemCode", "sn", "barcode", "categoryName", "unitName",
+        "openingQuantity", "minStockLevel", "batchNo", "mfgDate", "expiryDate", "unitPrice"
+    }
 
     if filename_lower.endswith(".xlsx") or filename_lower.endswith(".xls"):
         import openpyxl  # type: ignore
@@ -588,6 +617,31 @@ def import_items_from_file(
                 )
                 db.add(m)
 
+                # Assign opening stock to batch so batch-wise reports and stock out track it
+                batch_no = (row.get("batchNo") or "").strip()
+                mfg_date = (row.get("mfgDate") or "").strip()
+                exp_date = (row.get("expiryDate") or "").strip()
+                unit_price_str = (row.get("unitPrice") or "").strip()
+                
+                b_uprice = Decimal("0.00")
+                if unit_price_str:
+                    try:
+                        b_uprice = Decimal(str(float(unit_price_str)))
+                    except Exception:
+                        b_uprice = Decimal("0.00")
+
+                final_batch_no = batch_no if batch_no else f"BAT-{code}"
+                item_batch = ItemBatch(
+                    itemId=item.id,
+                    batchNo=final_batch_no,
+                    mfgDate=mfg_date or None,
+                    expiryDate=exp_date or None,
+                    quantity=opening_qty,
+                    initialQuantity=opening_qty,
+                    unitPrice=b_uprice,
+                )
+                db.add(item_batch)
+
             imported += 1
 
         except Exception as e:
@@ -613,6 +667,37 @@ def import_items_from_file(
         failedCount=len(errors),
         errors=errors,
     )
+
+
+def reset_all_inventory(
+    db: Session,
+    user_id: int,
+    ip: Optional[str] = None,
+    user_agent: Optional[str] = None,
+) -> int:
+    """
+    Safely wipes all inventory items, movements, batches, and transactions.
+    Preserves categories, units, locations, and user accounts.
+    """
+    total_items = db.query(Item).count()
+    db.query(StockMovement).delete(synchronize_session=False)
+    db.query(ItemBatch).delete(synchronize_session=False)
+    db.query(StockIn).delete(synchronize_session=False)
+    db.query(StockOut).delete(synchronize_session=False)
+    db.query(Item).delete(synchronize_session=False)
+    db.commit()
+
+    log_audit_event(
+        db=db,
+        action=AuditAction.BULK_IMPORT,
+        entity="ITEM",
+        userId=user_id,
+        newValue={"action": "RESET_ALL_INVENTORY", "wipedItemsCount": total_items},
+        ip=ip,
+        userAgent=user_agent,
+    )
+    db.commit()
+    return total_items
 
 
 def import_items_from_csv(

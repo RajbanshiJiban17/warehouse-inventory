@@ -24,6 +24,8 @@ from app.services.item_service import (
     update_item,
     soft_delete_item,
     import_items_from_csv,
+    import_items_from_file,
+    reset_all_inventory,
     serialize_item_response,
 )
 
@@ -240,6 +242,22 @@ async def bulk_import_items(
         ip=ip,
         user_agent=user_agent,
     )
+
+
+@router.post("/reset-inventory")
+def reset_inventory(
+    request: Request,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Wipes all items, stock movements, and batches so users can start with a fresh file upload."""
+    ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent")
+    wiped_count = reset_all_inventory(db=db, user_id=current_admin.id, ip=ip, user_agent=user_agent)
+    return {
+        "message": "Inventory successfully reset. Ready for new spreadsheet upload.",
+        "wipedCount": wiped_count,
+    }
 
 
 @router.get("/export/data")

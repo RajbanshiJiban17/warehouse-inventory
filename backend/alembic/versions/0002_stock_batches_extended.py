@@ -5,7 +5,7 @@ Revises: 0001_initial_schema
 Create Date: 2026-10-05 13:00:00.000000
 
 """
-from typing import Sequence, Union
+from typing import Any, Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
@@ -46,7 +46,7 @@ def upgrade() -> None:
             bind.execute(sa.text(f'ALTER TABLE stock_ins RENAME COLUMN "{existing}" TO "{col_name}"'))
             stock_in_cols.add(col_name)
         elif col_name not in stock_in_cols:
-            kwargs = {'server_default': default} if default else {}
+            kwargs: dict[str, Any] = {'server_default': default} if default else {}
             op.add_column('stock_ins', sa.Column(col_name, col_type, nullable=True, **kwargs))
             stock_in_cols.add(col_name)
 
@@ -69,7 +69,7 @@ def upgrade() -> None:
             bind.execute(sa.text(f'ALTER TABLE stock_outs RENAME COLUMN "{existing}" TO "{col_name}"'))
             stock_out_cols.add(col_name)
         elif col_name not in stock_out_cols:
-            kwargs = {'server_default': default} if default else {}
+            kwargs: dict[str, Any] = {'server_default': default} if default else {}
             op.add_column('stock_outs', sa.Column(col_name, col_type, nullable=True, **kwargs))
             stock_out_cols.add(col_name)
 

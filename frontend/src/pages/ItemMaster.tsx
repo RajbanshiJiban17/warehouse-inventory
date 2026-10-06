@@ -53,6 +53,11 @@ export const ItemMaster: React.FC = () => {
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Reset Inventory State
+  const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+
   // Form State
   const [formData, setFormData] = useState({
     itemCode: '',
@@ -257,6 +262,25 @@ export const ItemMaster: React.FC = () => {
     }
   };
 
+  const handleResetInventory = async () => {
+    if (resetConfirmText.trim().toUpperCase() !== 'RESET') {
+      showToast('error', 'Confirmation Mismatch', 'Please type RESET to confirm.');
+      return;
+    }
+    setIsResetting(true);
+    try {
+      const res = await api.resetInventory();
+      showToast('success', 'Inventory Reset', res.message || 'All items and transactions cleared.');
+      setIsResetModalOpen(false);
+      setResetConfirmText('');
+      fetchItems();
+    } catch (err: any) {
+      showToast('error', 'Reset Failed', err.message || 'Could not reset inventory.');
+    } finally {
+      setIsResetting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -297,6 +321,19 @@ export const ItemMaster: React.FC = () => {
             >
               <Upload className="w-4 h-4 text-brand-400" />
               <span>Bulk Import</span>
+            </button>
+          )}
+          {isAdmin && totalCount > 0 && (
+            <button
+              onClick={() => {
+                setResetConfirmText('');
+                setIsResetModalOpen(true);
+              }}
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-rose-950/40 text-rose-300 hover:text-white hover:bg-rose-900/60 rounded-xl text-xs font-semibold border border-rose-800/60 transition"
+              title="Wipe existing inventory items and batches to upload a clean spreadsheet"
+            >
+              <Trash2 className="w-4 h-4 text-rose-400" />
+              <span>Reset Inventory</span>
             </button>
           )}
           <button
@@ -978,6 +1015,52 @@ export const ItemMaster: React.FC = () => {
                 className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition shadow-lg shadow-rose-600/30"
               >
                 {isDeleting ? 'Archiving...' : 'Confirm Delete / Archive'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* RESET INVENTORY CONFIRMATION MODAL */}
+      {isResetModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-rose-800/80 rounded-2xl max-w-md w-full p-6 shadow-2xl animate-in zoom-in-95 duration-150">
+            <div className="flex items-center space-x-3 text-rose-400 mb-3">
+              <ShieldAlert className="w-6 h-6 flex-shrink-0" />
+              <h3 className="text-base font-bold text-white">Reset Entire Inventory Catalog?</h3>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              This action will permanently wipe all <strong className="text-white">{totalCount} items</strong>, 
+              stock movements, transactions, and batches from the database. Categories, units, and user accounts will be kept.
+            </p>
+
+            <div className="mt-4 p-3 rounded-xl bg-rose-950/40 border border-rose-900/60 text-xs text-rose-200">
+              <p className="font-semibold mb-1.5">To confirm this action, type <span className="font-mono font-bold text-white">RESET</span> below:</p>
+              <input
+                type="text"
+                placeholder="Type RESET..."
+                value={resetConfirmText}
+                onChange={(e) => setResetConfirmText(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-rose-700/60 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-rose-500"
+              />
+            </div>
+
+            <div className="mt-5 flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => setIsResetModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleResetInventory}
+                disabled={isResetting || resetConfirmText.trim().toUpperCase() !== 'RESET'}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition shadow-lg shadow-rose-600/30"
+              >
+                {isResetting ? 'Wiping...' : 'Confirm Reset All Inventory'}
               </button>
             </div>
           </div>

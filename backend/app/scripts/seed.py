@@ -8,6 +8,7 @@ from app.models import (
     User, UserRole, UserStatus,
     Category, Unit, Location,
     Item, StockMovement, MovementType,
+    StockIn, StockOut, ItemBatch,
     AuditLog, AuditAction
 )
 
@@ -77,10 +78,14 @@ def seed_database() -> None:
         print("[+] Locations verified/seeded.")
 
         # 5. Clean up previous static sample items if any exist (keeping inventory clean for Excel upload)
-        dummy_movements = db.query(StockMovement).filter(StockMovement.referenceId == "INITIAL_SEED").all()
-        if dummy_movements:
-            dummy_item_ids = list({m.itemId for m in dummy_movements})
+        dummy_movements = db.query(StockMovement).filter(StockMovement.referenceId.in_(["INITIAL_SEED", "SAMPLE_SEED"])).all()
+        dummy_items = db.query(Item).filter((Item.itemCode.like("ELEC-%")) | (Item.itemCode.like("SAMPLE-%"))).all()
+        dummy_item_ids = list({m.itemId for m in dummy_movements} | {it.id for it in dummy_items})
+        if dummy_item_ids:
             db.query(StockMovement).filter(StockMovement.itemId.in_(dummy_item_ids)).delete(synchronize_session=False)
+            db.query(StockIn).filter(StockIn.itemId.in_(dummy_item_ids)).delete(synchronize_session=False)
+            db.query(StockOut).filter(StockOut.itemId.in_(dummy_item_ids)).delete(synchronize_session=False)
+            db.query(ItemBatch).filter(ItemBatch.itemId.in_(dummy_item_ids)).delete(synchronize_session=False)
             db.query(Item).filter(Item.id.in_(dummy_item_ids)).delete(synchronize_session=False)
             db.commit()
             print(f"[+] Cleaned up {len(dummy_item_ids)} previous static dummy sample items.")

@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Warehouse, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useToast } from '../components/Toast';
+import { api } from '../services/api';
 
 export const Login: React.FC = () => {
   const [username, setUsername] = useState('');
@@ -13,6 +14,11 @@ export const Login: React.FC = () => {
   const { login } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    // Proactively pre-warm backend (e.g. Render server cold-start) so login is instant
+    api.checkHealth().catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
