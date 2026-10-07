@@ -77,21 +77,18 @@ def seed_database() -> None:
                 db.commit()
         print("[+] Locations verified/seeded.")
 
-        # 5. Clean up previous static sample items if any exist (keeping inventory clean for Excel upload)
-        dummy_movements = db.query(StockMovement).filter(StockMovement.referenceId.in_(["INITIAL_SEED", "SAMPLE_SEED"])).all()
-        dummy_items = db.query(Item).filter((Item.itemCode.like("ELEC-%")) | (Item.itemCode.like("SAMPLE-%"))).all()
-        dummy_item_ids = list({m.itemId for m in dummy_movements} | {it.id for it in dummy_items})
-        if dummy_item_ids:
-            db.query(StockMovement).filter(StockMovement.itemId.in_(dummy_item_ids)).delete(synchronize_session=False)
-            db.query(StockIn).filter(StockIn.itemId.in_(dummy_item_ids)).delete(synchronize_session=False)
-            db.query(StockOut).filter(StockOut.itemId.in_(dummy_item_ids)).delete(synchronize_session=False)
-            db.query(ItemBatch).filter(ItemBatch.itemId.in_(dummy_item_ids)).delete(synchronize_session=False)
-            db.query(Item).filter(Item.id.in_(dummy_item_ids)).delete(synchronize_session=False)
-            db.commit()
-            print(f"[+] Cleaned up {len(dummy_item_ids)} previous static dummy sample items.")
+        # 5. Clean up all inventory items, movements, batches so database starts completely empty
+        # Data will only exist after the user uploads their Excel / CSV spreadsheet
+        db.query(StockMovement).delete(synchronize_session=False)
+        db.query(ItemBatch).delete(synchronize_session=False)
+        db.query(StockIn).delete(synchronize_session=False)
+        db.query(StockOut).delete(synchronize_session=False)
+        db.query(Item).delete(synchronize_session=False)
+        db.commit()
+        print("[+] Purged all existing inventory items and movements. Database is 100% empty.")
 
         print("[+] Units, Categories, and Locations verified.")
-        print("[+] Inventory is ready and clean. Items will be populated exclusively via Excel/CSV import or manual entry.")
+        print("[+] Inventory is ready and completely clean. Items will appear only after spreadsheet upload.")
         print("[+] Database seed completed successfully!")
 
     except Exception as e:

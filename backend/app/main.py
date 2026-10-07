@@ -47,18 +47,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 db.commit()
                 logger.info("activated_pending_users", count=len(pending_users))
 
-            # 2. Clean any lingering sample seed items so inventory stays clean
-            dummy_movements = db.query(StockMovement).filter(StockMovement.referenceId.in_(["INITIAL_SEED", "SAMPLE_SEED"])).all()
-            dummy_items = db.query(Item).filter((Item.itemCode.like("ELEC-%")) | (Item.itemCode.like("SAMPLE-%"))).all()
-            dummy_ids = list({m.itemId for m in dummy_movements} | {it.id for it in dummy_items})
-            if dummy_ids:
-                db.query(StockMovement).filter(StockMovement.itemId.in_(dummy_ids)).delete(synchronize_session=False)
-                db.query(StockIn).filter(StockIn.itemId.in_(dummy_ids)).delete(synchronize_session=False)
-                db.query(StockOut).filter(StockOut.itemId.in_(dummy_ids)).delete(synchronize_session=False)
-                db.query(ItemBatch).filter(ItemBatch.itemId.in_(dummy_ids)).delete(synchronize_session=False)
-                db.query(Item).filter(Item.id.in_(dummy_ids)).delete(synchronize_session=False)
+            # 2. Clean all inventory items, movements, batches so database is 100% empty
+            # Data will only appear after the user uploads their spreadsheet
+            total_items = db.query(Item).count()
+            if total_items > 0:
+                db.query(StockMovement).delete(synchronize_session=False)
+                db.query(ItemBatch).delete(synchronize_session=False)
+                db.query(StockIn).delete(synchronize_session=False)
+                db.query(StockOut).delete(synchronize_session=False)
+                db.query(Item).delete(synchronize_session=False)
                 db.commit()
-                logger.info("cleaned_sample_items", count=len(dummy_ids))
+                logger.info("cleaned_all_inventory_items", count=total_items)
     except Exception as e:
         logger.warning("startup_cleanup_error", error=str(e))
 

@@ -9,6 +9,7 @@ import {
   Flame,
   Package,
   FileSpreadsheet,
+  Trash2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
@@ -121,19 +122,40 @@ export const Dashboard: React.FC = () => {
   return (
     <div className="space-y-6">
       {/* Welcome Banner */}
-      <div className="flex justify-between items-center bg-gradient-to-r from-slate-950 via-slate-900 to-brand-950 p-6 rounded-2xl border border-slate-800 shadow-xl">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-gradient-to-r from-slate-950 via-slate-900 to-brand-950 p-6 rounded-2xl border border-slate-800 shadow-xl">
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Warehouse Operations Center</h1>
           <p className="text-slate-400 text-sm mt-1">
             Real-time stock movements, automatic quantity deductions, and inventory velocity indicators.
           </p>
         </div>
-        {stats && stats.lowStockCount > 0 && (
-          <div className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-950/80 border border-amber-700/80 text-amber-200 text-xs font-bold animate-pulse">
-            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
-            <span>{stats.lowStockCount} Item(s) Need Reordering</span>
-          </div>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {stats && stats.totalItems > 0 && (
+            <button
+              onClick={async () => {
+                if (window.confirm("के तपाईं सबै आइटम र डेटा मेटाएर सिस्टम खाली गर्न चाहनुहुन्छ? (Are you sure you want to clear all inventory data?)")) {
+                  try {
+                    await api.resetInventory();
+                    window.location.reload();
+                  } catch (e: any) {
+                    alert(e.message || "Failed to reset");
+                  }
+                }
+              }}
+              className="px-3.5 py-2 bg-rose-950/60 hover:bg-rose-900 border border-rose-800/80 text-rose-300 text-xs font-semibold rounded-xl flex items-center space-x-1.5 transition shadow-sm"
+              title="सबै डेटा मेटाएर खाली गर्नुहोस्"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+              <span>डाटा खाली गर्नुहोस् (Reset All)</span>
+            </button>
+          )}
+          {stats && stats.lowStockCount > 0 && (
+            <div className="flex items-center space-x-2 px-4 py-2.5 rounded-xl bg-amber-950/80 border border-amber-700/80 text-amber-200 text-xs font-bold animate-pulse">
+              <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0" />
+              <span>{stats.lowStockCount} Item(s) Need Reordering</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* KPI Cards */}

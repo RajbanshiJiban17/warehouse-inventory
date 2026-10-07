@@ -263,14 +263,10 @@ export const ItemMaster: React.FC = () => {
   };
 
   const handleResetInventory = async () => {
-    if (resetConfirmText.trim().toUpperCase() !== 'RESET') {
-      showToast('error', 'Confirmation Mismatch', 'Please type RESET to confirm.');
-      return;
-    }
     setIsResetting(true);
     try {
       const res = await api.resetInventory();
-      showToast('success', 'Inventory Reset', res.message || 'All items and transactions cleared.');
+      showToast('success', 'इन्भेन्टरी रिसेट भयो (Inventory Reset)', res.message || 'सबै आइटम र ट्रान्ज्याक्सनहरू मेटाइयो। नयाँ फाइल अपलोड गर्न तयार छ।');
       setIsResetModalOpen(false);
       setResetConfirmText('');
       fetchItems();
@@ -323,17 +319,17 @@ export const ItemMaster: React.FC = () => {
               <span>Bulk Import</span>
             </button>
           )}
-          {isAdmin && totalCount > 0 && (
+          {totalCount > 0 && (
             <button
               onClick={() => {
                 setResetConfirmText('');
                 setIsResetModalOpen(true);
               }}
-              className="flex items-center space-x-1.5 px-3.5 py-2 bg-rose-950/40 text-rose-300 hover:text-white hover:bg-rose-900/60 rounded-xl text-xs font-semibold border border-rose-800/60 transition"
+              className="flex items-center space-x-1.5 px-3.5 py-2 bg-rose-950/60 text-rose-300 hover:text-white hover:bg-rose-900 rounded-xl text-xs font-semibold border border-rose-800/80 transition shadow-sm"
               title="Wipe existing inventory items and batches to upload a clean spreadsheet"
             >
               <Trash2 className="w-4 h-4 text-rose-400" />
-              <span>Reset Inventory</span>
+              <span>Reset Inventory (सबै डाटा खाली गर्नुहोस्)</span>
             </button>
           )}
           <button
@@ -1052,15 +1048,16 @@ export const ItemMaster: React.FC = () => {
                 onClick={() => setIsResetModalOpen(false)}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
               >
-                Cancel
+                रद्द गर्नुहोस् (Cancel)
               </button>
               <button
                 type="button"
                 onClick={handleResetInventory}
-                disabled={isResetting || resetConfirmText.trim().toUpperCase() !== 'RESET'}
-                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition shadow-lg shadow-rose-600/30"
+                disabled={isResetting}
+                className="px-5 py-2 bg-rose-600 hover:bg-rose-500 disabled:opacity-40 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-rose-600/30 flex items-center space-x-2"
               >
-                {isResetting ? 'Wiping...' : 'Confirm Reset All Inventory'}
+                <Trash2 className="w-4 h-4" />
+                <span>{isResetting ? 'मेटाउँदै (Wiping)...' : 'हो, सबै डाटा खाली गर्नुहोस् (Confirm Reset)'}</span>
               </button>
             </div>
           </div>
