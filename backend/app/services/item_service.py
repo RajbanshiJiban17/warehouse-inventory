@@ -1,7 +1,7 @@
 import csv
 import io
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, cast
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
@@ -22,7 +22,7 @@ from app.services.audit_service import log_audit_event
 
 
 def serialize_item_response(item: Item) -> ItemResponse:
-    res = ItemResponse.model_validate(item)
+    res: ItemResponse = cast(ItemResponse, ItemResponse.model_validate(item))
     if item.category:
         res.categoryName = item.category.name
     if item.unit:
@@ -243,23 +243,35 @@ def update_item(
         "minStockLevel": str(item.minStockLevel),
     }
 
-    if request.itemCode and request.itemCode != item.itemCode:
-        conflict = db.query(Item).filter(Item.itemCode == request.itemCode, Item.id != item_id).first()
-        if conflict:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Item Code already registered to '{conflict.itemName}'",
-            )
-        item.itemCode = request.itemCode.strip()
+    if request.itemCode:
+        new_code = request.itemCode.strip()
+        if new_code.lower() != item.itemCode.strip().lower():
+            conflict = db.query(Item).filter(
+                Item.itemCode == new_code,
+                Item.id != item_id,
+                Item.isActive == True,
+            ).first()
+            if conflict:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Item Code already registered to '{conflict.itemName}'",
+                )
+            item.itemCode = new_code
 
-    if request.barcode and request.barcode != item.barcode:
-        conflict = db.query(Item).filter(Item.barcode == request.barcode, Item.id != item_id).first()
-        if conflict:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"Barcode already registered to '{conflict.itemName}'",
-            )
-        item.barcode = request.barcode.strip()
+    if request.barcode:
+        new_barcode = request.barcode.strip()
+        if new_barcode.lower() != item.barcode.strip().lower():
+            conflict = db.query(Item).filter(
+                Item.barcode == new_barcode,
+                Item.id != item_id,
+                Item.isActive == True,
+            ).first()
+            if conflict:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Barcode already registered to '{conflict.itemName}'",
+                )
+            item.barcode = new_barcode
 
     if request.itemName:
         item.itemName = request.itemName.strip()
@@ -438,7 +450,7 @@ def import_items_from_file(
         for row_cells in sheet.iter_rows(min_row=header_row_idx + 1, values_only=True):
             if not row_cells or all(v is None or str(v).strip() == "" for v in row_cells):
                 continue
-            row_dict = {}
+            row_dict: Dict[str, Any] = {}
             for col_idx, cell_value in enumerate(row_cells):
                 if col_idx < len(headers) and headers[col_idx]:
                     val_str = "" if cell_value is None else str(cell_value).strip()
@@ -469,7 +481,7 @@ def import_items_from_file(
             for line in all_lines[header_row_idx + 1:]:
                 if not line or all(not str(v).strip() for v in line):
                     continue
-                row_dict = {}
+                row_dict: Dict[str, Any] = {}
                 for col_idx, cell_value in enumerate(line):
                     if col_idx < len(headers) and headers[col_idx]:
                         row_dict[headers[col_idx]] = cell_value.strip()

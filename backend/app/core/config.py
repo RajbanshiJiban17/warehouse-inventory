@@ -29,8 +29,8 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000"
 
     # Rate Limiting
-    RATE_LIMIT_LOGIN: str = "5/15minute"
-    RATE_LIMIT_DEFAULT: str = "100/minute"
+    RATE_LIMIT_LOGIN: str = "60/minute"
+    RATE_LIMIT_DEFAULT: str = "120/minute"
 
     @field_validator("SECRET_KEY", "REFRESH_SECRET_KEY")
     @classmethod

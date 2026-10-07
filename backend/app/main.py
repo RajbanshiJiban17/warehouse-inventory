@@ -31,11 +31,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialize and synchronize tables/columns across SQLite, Postgres, or Hosting
     ensure_database_schema(engine)
 
-    # Automatically activate and grant ADMIN role to any existing pending users
+    # Ensure clean inventory without dummy sample items until Excel upload
     try:
         from app.core.database import SessionLocal
         from app.models.user import User, UserRole, UserStatus
+        from app.models.stock import StockMovement, StockIn, StockOut, ItemBatch
+        from app.models.item import Item
         with SessionLocal() as db:
+            # 1. Activate pending users
             pending_users = db.query(User).filter(User.status == UserStatus.PENDING).all()
             for u in pending_users:
                 u.status = UserStatus.ACTIVE
@@ -43,8 +46,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             if pending_users:
                 db.commit()
                 logger.info("activated_pending_users", count=len(pending_users))
+
+            # 2. Clean any lingering sample seed items so inventory stays clean
+            dummy_movements = db.query(StockMovement).filter(StockMovement.referenceId.in_(["INITIAL_SEED", "SAMPLE_SEED"])).all()
+            dummy_items = db.query(Item).filter((Item.itemCode.like("ELEC-%")) | (Item.itemCode.like("SAMPLE-%"))).all()
+            dummy_ids = list({m.itemId for m in dummy_movements} | {it.id for it in dummy_items})
+            if dummy_ids:
+                db.query(StockMovement).filter(StockMovement.itemId.in_(dummy_ids)).delete(synchronize_session=False)
+                db.query(StockIn).filter(StockIn.itemId.in_(dummy_ids)).delete(synchronize_session=False)
+                db.query(StockOut).filter(StockOut.itemId.in_(dummy_ids)).delete(synchronize_session=False)
+                db.query(ItemBatch).filter(ItemBatch.itemId.in_(dummy_ids)).delete(synchronize_session=False)
+                db.query(Item).filter(Item.id.in_(dummy_ids)).delete(synchronize_session=False)
+                db.commit()
+                logger.info("cleaned_sample_items", count=len(dummy_ids))
     except Exception as e:
-        logger.warning("user_auto_activation_error", error=str(e))
+        logger.warning("startup_cleanup_error", error=str(e))
 
     yield
 

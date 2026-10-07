@@ -15,6 +15,9 @@ import {
   Boxes,
   X,
   Sparkles,
+  Layers,
+  Trash2,
+  Plus,
 } from 'lucide-react';
 import { api } from '../services/api';
 import type { Item, Location, StockInResponse } from '../types';
@@ -72,8 +75,32 @@ export const ItemIn: React.FC = () => {
   const [showBatchFields, setShowBatchFields] = useState(false);
   const [itemBatches, setItemBatches] = useState<any[]>([]);
   const [loadingBatches, setLoadingBatches] = useState(false);
-  const [selectedBatchMode, setSelectedBatchMode] = useState<'existing' | 'new' | 'none'>('none');
+  const [selectedBatchMode, setSelectedBatchMode] = useState<'existing' | 'new'>('new');
   const [selectedBatchId, setSelectedBatchId] = useState<number | null>(null);
+
+  // Multi-Batch mode state ("batch anusar farak farak qty aayeu vane")
+  const [isMultiBatchMode, setIsMultiBatchMode] = useState(false);
+  const [multiBatches, setMultiBatches] = useState<Array<{
+    id: string;
+    batchNo: string;
+    quantity: string;
+    mfgDateAD: string;
+    mfgDateBS: string;
+    expiryDateAD: string;
+    expiryDateBS: string;
+    existingBatchId: number | null;
+  }>>([
+    {
+      id: 'batch-1',
+      batchNo: '',
+      quantity: '',
+      mfgDateAD: '',
+      mfgDateBS: '',
+      expiryDateAD: '',
+      expiryDateBS: '',
+      existingBatchId: null,
+    },
+  ]);
   const [isSaving, setIsSaving] = useState(false);
 
   // History / Recent Transactions
@@ -210,13 +237,27 @@ export const ItemIn: React.FC = () => {
     setQuantity('');
     setUnitPrice('');
     setItemBatches([]);
-    setSelectedBatchMode('none');
+    setItemBatches([]);
+    setSelectedBatchMode('new');
     setSelectedBatchId(null);
     setBatchNo('');
     setMfgDateAD('');
     setMfgDateBS('');
     setExpiryDateAD('');
     setExpiryDateBS('');
+    setIsMultiBatchMode(false);
+    setMultiBatches([
+      {
+        id: 'batch-1',
+        batchNo: '',
+        quantity: '',
+        mfgDateAD: '',
+        mfgDateBS: '',
+        expiryDateAD: '',
+        expiryDateBS: '',
+        existingBatchId: null,
+      },
+    ]);
   };
 
   // Fetch existing batches for the selected item to enable batch top-up
@@ -227,38 +268,14 @@ export const ItemIn: React.FC = () => {
         .getBatches(activeItem.id)
         .then((batches) => {
           setItemBatches(batches || []);
-          if (batches && batches.length > 0) {
-            // Default to topping up the first active batch
-            const first = batches[0];
-            setSelectedBatchMode('existing');
-            setSelectedBatchId(first.id);
-            setBatchNo(first.batchNo);
-            if (first.mfgDate) {
-              setMfgDateAD(first.mfgDate);
-              const bs = convertADtoBS(first.mfgDate);
-              if (bs) setMfgDateBS(bs);
-            }
-            if (first.expiryDate) {
-              setExpiryDateAD(first.expiryDate);
-              const bs = convertADtoBS(first.expiryDate);
-              if (bs) setExpiryDateBS(bs);
-            }
-            setShowBatchFields(true);
-          } else {
-            setSelectedBatchMode('new');
-            setSelectedBatchId(null);
-            setBatchNo('');
-          }
         })
         .catch(() => {
           setItemBatches([]);
-          setSelectedBatchMode('new');
-          setSelectedBatchId(null);
         })
         .finally(() => setLoadingBatches(false));
     } else {
       setItemBatches([]);
-      setSelectedBatchMode('none');
+      setSelectedBatchMode('new');
       setSelectedBatchId(null);
       setBatchNo('');
     }
@@ -284,7 +301,6 @@ export const ItemIn: React.FC = () => {
       setExpiryDateAD('');
       setExpiryDateBS('');
     }
-    setShowBatchFields(true);
   };
 
   const switchToNewBatch = () => {
@@ -295,7 +311,95 @@ export const ItemIn: React.FC = () => {
     setMfgDateBS('');
     setExpiryDateAD('');
     setExpiryDateBS('');
-    setShowBatchFields(true);
+  };
+
+  const handleSingleBatchDropdownChange = (val: string) => {
+    if (val === 'new') {
+      switchToNewBatch();
+    } else {
+      const found = itemBatches.find((b) => String(b.id) === val);
+      if (found) {
+        selectExistingBatch(found);
+      }
+    }
+  };
+
+  // Multi-Batch Handlers ("batch anusar farak farak qty aayeu vane tesma qty tapne option")
+  const handleAddMultiBatchRow = () => {
+    setMultiBatches((prev) => [
+      ...prev,
+      {
+        id: `batch-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        batchNo: '',
+        quantity: '',
+        mfgDateAD: '',
+        mfgDateBS: '',
+        expiryDateAD: '',
+        expiryDateBS: '',
+        existingBatchId: null,
+      },
+    ]);
+  };
+
+  const handleRemoveMultiBatchRow = (id: string) => {
+    if (multiBatches.length <= 1) return;
+    const updated = multiBatches.filter((b) => b.id !== id);
+    setMultiBatches(updated);
+    const total = updated.reduce((sum, b) => sum + (parseFloat(b.quantity) || 0), 0);
+    setQuantity(total > 0 ? String(total) : '');
+  };
+
+  const handleUpdateMultiBatchRow = (id: string, field: string, value: any) => {
+    setMultiBatches((prev) => {
+      const updated = prev.map((row) => {
+        if (row.id !== id) return row;
+        const newRow: any = { ...row, [field]: value };
+        if (field === 'mfgDateAD' && value && isValidADDate(value)) {
+          const bs = convertADtoBS(value);
+          if (bs) newRow.mfgDateBS = bs;
+        } else if (field === 'mfgDateBS' && value && isValidBSDate(value)) {
+          const ad = convertBStoAD(value);
+          if (ad) newRow.mfgDateAD = ad;
+        } else if (field === 'expiryDateAD' && value && isValidADDate(value)) {
+          const bs = convertADtoBS(value);
+          if (bs) newRow.expiryDateBS = bs;
+        } else if (field === 'expiryDateBS' && value && isValidBSDate(value)) {
+          const ad = convertBStoAD(value);
+          if (ad) newRow.expiryDateAD = ad;
+        }
+        return newRow;
+      });
+      if (field === 'quantity') {
+        const total = updated.reduce((sum, b) => sum + (parseFloat(b.quantity) || 0), 0);
+        setQuantity(total > 0 ? String(total) : '');
+      }
+      return updated;
+    });
+  };
+
+  const handleSelectMultiBatchExisting = (id: string, batchIdVal: string) => {
+    if (batchIdVal === 'new') {
+      handleUpdateMultiBatchRow(id, 'existingBatchId', null);
+      handleUpdateMultiBatchRow(id, 'batchNo', '');
+      return;
+    }
+    const found = itemBatches.find((b) => String(b.id) === batchIdVal);
+    if (found) {
+      setMultiBatches((prev) =>
+        prev.map((row) => {
+          if (row.id !== id) return row;
+          return {
+            ...row,
+            existingBatchId: found.id,
+            batchNo: found.batchNo,
+            mfgDateAD: found.mfgDate || '',
+            mfgDateBS: found.mfgDate ? (convertADtoBS(found.mfgDate) || '') : '',
+            expiryDateAD: found.expiryDate || '',
+            expiryDateBS: found.expiryDate ? (convertADtoBS(found.expiryDate) || '') : '',
+          };
+        })
+      );
+    }
   };
 
   // 1. Separate Item Code Lookup / Selection
@@ -413,6 +517,68 @@ export const ItemIn: React.FC = () => {
     e.preventDefault();
     if (!activeItem) {
       showToast('error', 'Select Item', 'Please select or scan an item first using Code, Name, or Barcode.');
+      return;
+    }
+
+    if (isMultiBatchMode) {
+      const validRows = multiBatches.filter((b) => parseFloat(b.quantity) > 0);
+      if (validRows.length === 0) {
+        showToast('error', 'Invalid Quantities', 'Please enter receiving quantities for at least one batch row.');
+        return;
+      }
+
+      setIsSaving(true);
+      try {
+        let lastResult: any = null;
+        let count = 0;
+        const totalBatchQty = validRows.reduce((sum, r) => sum + parseFloat(r.quantity), 0);
+
+        for (const row of validRows) {
+          const rowQty = parseFloat(row.quantity);
+          let rowBatchNo = row.batchNo.trim();
+          if (!rowBatchNo && (row.mfgDateAD || row.expiryDateAD)) {
+            rowBatchNo = `BAT-${activeItem.itemCode.replace(/[^a-zA-Z0-9]/g, '')}-${Date.now().toString().slice(-6)}`;
+          }
+
+          const rowAmount = numPrice > 0 ? rowQty * numPrice : 0;
+          lastResult = await api.stockIn({
+            itemId: activeItem.id,
+            quantity: rowQty,
+            dateAD: dateAD || undefined,
+            dateBS: dateBS || undefined,
+            supplierName: supplierName.trim() || undefined,
+            receivedFrom: receivedFrom.trim() || undefined,
+            location: selectedLocation || undefined,
+            unitPrice: numPrice > 0 ? numPrice : 0,
+            amount: rowAmount > 0 ? rowAmount : 0,
+            batchNo: rowBatchNo || undefined,
+            mfgDate: row.mfgDateAD || undefined,
+            expiryDate: row.expiryDateAD || undefined,
+            remark: remark.trim() || undefined,
+            idempotencyKey: `IN_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          });
+          count++;
+        }
+
+        showToast(
+          'success',
+          'Stock Received Successfully!',
+          `Recorded ${count} batches (${totalBatchQty} ${activeItem.unitName || 'units'}). Balance: ${lastResult?.balanceAfter || ''}`
+        );
+
+        handleClearSelectedItem();
+        setRemark('');
+        fetchHistory();
+        fetchItemsCatalog();
+
+        setTimeout(() => {
+          itemCodeInputRef.current?.focus();
+        }, 50);
+      } catch (err: any) {
+        showToast('error', 'Stock In Failed', err.message || 'Could not process multi-batch inward.');
+      } finally {
+        setIsSaving(false);
+      }
       return;
     }
 
@@ -595,6 +761,25 @@ export const ItemIn: React.FC = () => {
             </select>
           </div>
         </div>
+
+        {/* Empty Catalog Alert Banner */}
+        {!loadingItems && allItems.length === 0 && (
+          <div className="p-4 rounded-xl bg-amber-950/40 border border-amber-800/60 text-amber-200 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-center space-x-2.5">
+              <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0" />
+              <span>
+                इन्भेन्टरीमा कुनै सामान दर्ता छैन (No items uploaded yet). स्टक इन्ट्री गर्न पहिला Item Master मा Excel वा CSV फाइल अपलोड गर्नुहोस्।
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/items')}
+              className="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-bold text-xs shadow transition whitespace-nowrap"
+            >
+              Go to Item Master / Upload
+            </button>
+          </div>
+        )}
 
         {/* ITEM SELECTION SECTION: Code Xuttai, Name Xuttai, Barcode Xuttai */}
         <div className="space-y-3">
@@ -833,231 +1018,354 @@ export const ItemIn: React.FC = () => {
           {/* BATCH & EXPIRY TRACKING SECTION */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowBatchFields(!showBatchFields)}
+                className="text-xs text-brand-400 hover:text-brand-300 flex items-center space-x-1.5 font-bold"
+              >
                 <Tag className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-bold text-white uppercase tracking-wider">
-                  Batch & Expiry Management (ब्याच तथा म्याद व्यवस्थापन)
+                <span>
+                  {showBatchFields
+                    ? '− Hide Batch & Expiry Tracking'
+                    : '+ Add Batch No / MFG Date / Expiry Date (Optional)'}
                 </span>
                 {itemBatches.length > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[10px] font-bold text-amber-400">
+                  <span className="ml-2 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/30 text-[10px] font-bold text-amber-400">
                     {itemBatches.length} Existing Batch(es)
                   </span>
                 )}
-              </div>
+              </button>
 
-              <div className="flex items-center space-x-2">
-                {selectedBatchMode === 'new' && (
-                  <button
-                    type="button"
-                    onClick={handleGenerateBatchNo}
-                    className="inline-flex items-center space-x-1 text-xs text-amber-400 hover:text-amber-300 font-semibold"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Auto-Generate Batch No</span>
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setShowBatchFields(!showBatchFields)}
-                  className="text-xs text-brand-400 hover:text-brand-300 font-bold"
-                >
-                  {showBatchFields ? '− Hide Details' : '+ Show Batch Controls'}
-                </button>
-              </div>
-            </div>
-
-            {/* Existing Batches Selector: Allows user to see which batch quantity is coming from and top-up directly */}
-            {activeItem && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-2">
-                  कुन ब्याचमा कति सामान छ? (Select Batch to Top-Up Qty or Create New)
-                </label>
-
-                {loadingBatches ? (
-                  <div className="p-3 text-xs text-slate-400 animate-pulse">Loading batches for this product...</div>
-                ) : itemBatches.length > 0 ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                    {itemBatches.map((b) => {
-                      const isSelected = selectedBatchMode === 'existing' && selectedBatchId === b.id;
-                      return (
-                        <div
-                          key={`batch-card-${b.id}`}
-                          onClick={() => selectExistingBatch(b)}
-                          className={`p-3 rounded-xl border cursor-pointer transition relative flex flex-col justify-between ${
-                            isSelected
-                              ? 'bg-emerald-950/40 border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-950/50'
-                              : 'bg-slate-950/60 border-slate-800 hover:border-slate-700 hover:bg-slate-900/60'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-mono font-bold text-xs px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/30">
-                              {b.batchNo}
-                            </span>
-                            {isSelected ? (
-                              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/20 px-2 py-0.5 rounded-full flex items-center space-x-1">
-                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                                <span>Top-Up Target</span>
-                              </span>
-                            ) : (
-                              <span className="text-[10px] text-slate-500 hover:text-slate-300">Click to Select</span>
-                            )}
-                          </div>
-                          <div className="mt-2 text-xs">
-                            <div className="text-slate-400">
-                              Current Stock: <strong className="text-white font-mono text-sm">{b.quantity}</strong> {activeItem.unitName || 'units'}
-                            </div>
-                            {b.expiryDate && (
-                              <div className="text-[11px] text-slate-400 mt-0.5">
-                                Exp: <span className="text-amber-200 font-mono">{b.expiryDate}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-
-                    {/* Button to switch to creating a fresh batch */}
-                    <div
-                      onClick={switchToNewBatch}
-                      className={`p-3 rounded-xl border border-dashed cursor-pointer transition flex flex-col items-center justify-center text-center ${
-                        selectedBatchMode === 'new'
-                          ? 'bg-brand-950/40 border-brand-500 ring-2 ring-brand-500/40 shadow-lg'
-                          : 'bg-slate-950/40 border-slate-800 hover:border-slate-700 hover:bg-slate-900/40'
+              {showBatchFields && (
+                <div className="flex items-center space-x-2">
+                  {/* Mode Toggle: Single Batch vs Multi Batch */}
+                  <div className="inline-flex rounded-xl bg-slate-950 p-0.5 border border-slate-800 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setIsMultiBatchMode(false)}
+                      className={`px-3 py-1 rounded-lg font-semibold transition ${
+                        !isMultiBatchMode
+                          ? 'bg-brand-600 text-white shadow'
+                          : 'text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      <PlusCircle className="w-5 h-5 text-brand-400 mb-1" />
-                      <span className="text-xs font-bold text-brand-300">+ New Batch Number</span>
-                      <span className="text-[10px] text-slate-400">नयाँ ब्याच सिर्जना गर्नुहोस्</span>
+                      Single Batch (एउटै ब्याच)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMultiBatchMode(true);
+                        // If current quantity is filled, prepopulate first row
+                        if (quantity && multiBatches.length === 1 && !multiBatches[0].quantity) {
+                          handleUpdateMultiBatchRow(multiBatches[0].id, 'quantity', quantity);
+                          if (batchNo) handleUpdateMultiBatchRow(multiBatches[0].id, 'batchNo', batchNo);
+                        }
+                      }}
+                      className={`px-3 py-1 rounded-lg font-semibold transition flex items-center space-x-1 ${
+                        isMultiBatchMode
+                          ? 'bg-amber-600 text-white shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                      title="फरक-फरक ब्याच अनुसार मात्रा थप्ने"
+                    >
+                      <Layers className="w-3.5 h-3.5 mr-1" />
+                      <span>फरक-फरक ब्याच (Multi-Batch)</span>
+                    </button>
+                  </div>
+
+                  {!isMultiBatchMode && selectedBatchMode === 'new' && (
+                    <button
+                      type="button"
+                      onClick={handleGenerateBatchNo}
+                      className="inline-flex items-center space-x-1 text-xs text-amber-400 hover:text-amber-300 font-semibold"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Auto Batch No</span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* EXPANDED BATCH CONTROLS */}
+            {showBatchFields && (
+              <>
+                {/* 1. SINGLE BATCH MODE (Default & Same as Before + Existing Batch Top-Up Option) */}
+                {!isMultiBatchMode ? (
+                  <div className="space-y-4 pt-1">
+                    {/* Existing Batch Selector: choose which batch qty is coming for */}
+                    {activeItem && itemBatches.length > 0 && (
+                      <div className="bg-slate-950/70 p-3 rounded-xl border border-slate-800 space-y-1.5">
+                        <label className="block text-xs font-semibold text-slate-300">
+                          कुन ब्याचमा थप्ने? (Top-Up Existing Batch or Create New) {loadingBatches && <span className="text-[10px] text-slate-400 font-normal animate-pulse">(लोड हुँदैछ...)</span>}
+                        </label>
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                          <select
+                            value={selectedBatchMode === 'existing' && selectedBatchId ? String(selectedBatchId) : 'new'}
+                            onChange={(e) => handleSingleBatchDropdownChange(e.target.value)}
+                            className="w-full sm:w-auto flex-1 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-xs font-semibold focus:outline-none focus:border-brand-500"
+                          >
+                            <option value="new">+ नयाँ ब्याच सिर्जना गर्ने (+ Create New Batch)</option>
+                            {itemBatches.map((b) => (
+                              <option key={b.id} value={b.id}>
+                                पुरानो ब्याच: {b.batchNo} (मौज्दात: {b.quantity} {activeItem?.unitName || 'units'}) {b.expiryDate ? `| म्याद: ${b.expiryDate}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                          {selectedBatchMode === 'existing' && selectedBatchId && (
+                            <span className="text-xs text-emerald-400 font-semibold bg-emerald-950/60 px-3 py-1.5 rounded-lg border border-emerald-800/60">
+                              ब्याच <strong className="text-amber-300 font-mono">{batchNo}</strong> मा थपिँदैछ | हालको मौज्दात:{' '}
+                              <strong className="text-white font-mono">{itemBatches.find(b => b.id === selectedBatchId)?.quantity || 0}</strong> + नयाँ:{' '}
+                              <strong className="text-white font-mono">{numQty}</strong> = नयाँ मौज्दात:{' '}
+                              <strong className="text-white font-mono underline">
+                                {(Number(itemBatches.find(b => b.id === selectedBatchId)?.quantity || 0) + numQty).toFixed(2)}
+                              </strong>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Standard 3 Columns Input (Same as Before) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-1">
+                      {/* Batch Number */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-300 mb-1">
+                          Batch Number (ब्याच नम्बर)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. BATCH-2026-A1"
+                          value={batchNo}
+                          onChange={(e) => {
+                            setBatchNo(e.target.value);
+                            setSelectedBatchMode('new');
+                            setSelectedBatchId(null);
+                          }}
+                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono font-bold focus:outline-none focus:border-brand-500"
+                        />
+                        <span className="text-[10px] text-slate-500 block mt-1">
+                          {selectedBatchMode === 'existing'
+                            ? 'पुरानो ब्याच छानिएको छ (Top-up mode)'
+                            : 'वैकल्पिक: खाली छोडे स्वतः सिर्जना हुन्छ'}
+                        </span>
+                      </div>
+
+                      {/* Manufacturing Date (Connected AD & BS) */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-slate-300 mb-1">
+                          Manufacturing Date (MFG - उत्पादन मिति)
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <div>
+                            <input
+                              type="date"
+                              value={mfgDateAD}
+                              onChange={(e) => handleMfgADChange(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:border-brand-500"
+                            />
+                            <span className="text-[9px] text-slate-500 block">AD (English)</span>
+                          </div>
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="2083-01-01"
+                              value={mfgDateBS}
+                              onChange={(e) => handleMfgBSChange(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-slate-950 border border-amber-700/60 rounded-xl text-amber-300 text-xs font-mono focus:outline-none focus:border-amber-500"
+                            />
+                            <span className="text-[9px] text-amber-400/80 block">BS (नेपाली)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Expiry Date (Connected AD & BS) */}
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-slate-300 mb-1">
+                          Expiry Date (समाप्ति मिति)
+                        </label>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <div>
+                            <input
+                              type="date"
+                              value={expiryDateAD}
+                              onChange={(e) => handleExpiryADChange(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:border-brand-500"
+                            />
+                            <span className="text-[9px] text-slate-500 block">AD (English)</span>
+                          </div>
+                          <div>
+                            <input
+                              type="text"
+                              placeholder="2084-01-01"
+                              value={expiryDateBS}
+                              onChange={(e) => handleExpiryBSChange(e.target.value)}
+                              className="w-full px-2.5 py-1.5 bg-slate-950 border border-amber-700/60 rounded-xl text-amber-300 text-xs font-mono focus:outline-none focus:border-amber-500"
+                            />
+                            <span className="text-[9px] text-amber-400/80 block">BS (नेपाली)</span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between text-xs text-slate-400">
-                    <span>यो सामानको कुनै पुरानो ब्याच छैन (No existing batches found). Creating a new batch:</span>
-                    <button
-                      type="button"
-                      onClick={switchToNewBatch}
-                      className="px-2.5 py-1 bg-brand-600/30 text-brand-300 border border-brand-500/40 rounded-lg font-semibold hover:bg-brand-600/50"
-                    >
-                      + Create Batch
-                    </button>
+                  /* 2. MULTI-BATCH MODE ("batch anusar farak farak qty aayeu vane tesma qty tapne option") */
+                  <div className="space-y-3 pt-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs text-slate-300">
+                        फरक-फरक ब्याच अनुसार मात्रा प्रविष्टि गर्नुहोस् (Enter batch number, quantity and dates per batch):
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleAddMultiBatchRow}
+                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-brand-600/30 hover:bg-brand-600/50 text-brand-300 border border-brand-500/40 rounded-xl text-xs font-bold transition"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>अर्को ब्याच थप्नुहोस् (+ Add Batch)</span>
+                      </button>
+                    </div>
+
+                    <div className="space-y-2.5">
+                      {multiBatches.map((row, idx) => (
+                        <div key={row.id} className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-amber-400 font-mono">
+                              ब्याच #{idx + 1}
+                            </span>
+                            {multiBatches.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveMultiBatchRow(row.id)}
+                                className="p-1 text-slate-500 hover:text-rose-400 transition"
+                                title="Remove row"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                            {/* Batch Selector / Input */}
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                ब्याच नम्बर (Batch No) *
+                              </label>
+                              {itemBatches.length > 0 && (
+                                <select
+                                  value={row.existingBatchId ? String(row.existingBatchId) : 'new'}
+                                  onChange={(e) => handleSelectMultiBatchExisting(row.id, e.target.value)}
+                                  className="w-full mb-1.5 px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs font-semibold focus:outline-none focus:border-brand-500"
+                                >
+                                  <option value="new">+ नयाँ ब्याच (New Batch)</option>
+                                  {itemBatches.map((b) => (
+                                    <option key={b.id} value={b.id}>
+                                      पुरानो ब्याच: {b.batchNo} (Stock: {b.quantity} {activeItem?.unitName || 'units'})
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                              <input
+                                type="text"
+                                placeholder="e.g. BATCH-A1"
+                                value={row.batchNo}
+                                onChange={(e) => handleUpdateMultiBatchRow(row.id, 'batchNo', e.target.value)}
+                                className="w-full px-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-white text-xs font-mono font-bold focus:outline-none focus:border-brand-500"
+                              />
+                            </div>
+
+                            {/* Batch Quantity */}
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                ब्याच मात्रा (Quantity) *
+                              </label>
+                              <input
+                                type="number"
+                                step="any"
+                                min="0.01"
+                                required
+                                placeholder={`Qty in ${activeItem?.unitName || 'units'}`}
+                                value={row.quantity}
+                                onChange={(e) => handleUpdateMultiBatchRow(row.id, 'quantity', e.target.value)}
+                                className="w-full px-3 py-1.5 bg-slate-900 border border-emerald-600/60 rounded-lg text-white text-xs font-bold focus:outline-none focus:border-emerald-500"
+                              />
+                              {row.existingBatchId && (
+                                <span className="text-[10px] text-slate-400 block mt-0.5">
+                                  Current Stock: {itemBatches.find(b => b.id === row.existingBatchId)?.quantity || 0}
+                                </span>
+                              )}
+                            </div>
+
+                            {/* MFG Date */}
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                MFG (उत्पादन मिति)
+                              </label>
+                              <div className="grid grid-cols-2 gap-1">
+                                <input
+                                  type="date"
+                                  value={row.mfgDateAD}
+                                  onChange={(e) => handleUpdateMultiBatchRow(row.id, 'mfgDateAD', e.target.value)}
+                                  className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white text-[11px] focus:outline-none focus:border-brand-500"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="2083-01-01"
+                                  value={row.mfgDateBS}
+                                  onChange={(e) => handleUpdateMultiBatchRow(row.id, 'mfgDateBS', e.target.value)}
+                                  className="w-full px-2 py-1 bg-slate-900 border border-amber-700/60 rounded-lg text-amber-300 font-mono text-[11px] focus:outline-none focus:border-amber-500"
+                                />
+                              </div>
+                              <div className="flex justify-between text-[9px] text-slate-500 mt-0.5">
+                                <span>AD</span>
+                                <span>BS</span>
+                              </div>
+                            </div>
+
+                            {/* Expiry Date */}
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                Expiry (समाप्ति मिति)
+                              </label>
+                              <div className="grid grid-cols-2 gap-1">
+                                <input
+                                  type="date"
+                                  value={row.expiryDateAD}
+                                  onChange={(e) => handleUpdateMultiBatchRow(row.id, 'expiryDateAD', e.target.value)}
+                                  className="w-full px-2 py-1 bg-slate-900 border border-slate-700 rounded-lg text-white text-[11px] focus:outline-none focus:border-brand-500"
+                                />
+                                <input
+                                  type="text"
+                                  placeholder="2084-01-01"
+                                  value={row.expiryDateBS}
+                                  onChange={(e) => handleUpdateMultiBatchRow(row.id, 'expiryDateBS', e.target.value)}
+                                  className="w-full px-2 py-1 bg-slate-900 border border-amber-700/60 rounded-lg text-amber-300 font-mono text-[11px] focus:outline-none focus:border-amber-500"
+                                />
+                              </div>
+                              <div className="flex justify-between text-[9px] text-slate-500 mt-0.5">
+                                <span>AD</span>
+                                <span>BS</span>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 flex items-center justify-between text-xs">
+                      <span className="text-slate-400">
+                        जम्मा ब्याचहरू (Total Batches): <strong className="text-white font-mono">{multiBatches.length}</strong>
+                      </span>
+                      <span className="text-emerald-400 font-bold">
+                        कुल मात्रा (Total Inward Qty):{' '}
+                        <strong className="text-white font-mono text-sm underline">
+                          {multiBatches.reduce((sum, b) => sum + (parseFloat(b.quantity) || 0), 0).toFixed(2)}{' '}
+                          {activeItem?.unitName || 'units'}
+                        </strong>
+                      </span>
+                    </div>
                   </div>
                 )}
-              </div>
-            )}
-
-            {/* Selected Batch Top-Up Summary Callout */}
-            {selectedBatchMode === 'existing' && selectedBatchId && (
-              <div className="p-3.5 rounded-xl bg-emerald-950/60 border border-emerald-800/80 text-emerald-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-center space-x-2.5">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-400 flex-shrink-0" />
-                  <div>
-                    <span className="font-bold text-white">ब्याचमा थपिँदैछ (Topping Up Batch):</span>{' '}
-                    <span className="font-mono font-bold text-amber-300">{batchNo}</span> — Current Batch Stock:{' '}
-                    <strong className="text-white">
-                      {itemBatches.find((b) => b.id === selectedBatchId)?.quantity || 0}
-                    </strong>{' '}
-                    + Receiving Qty: <strong className="text-white">{numQty}</strong> = Projected New Batch Stock:{' '}
-                    <strong className="text-white underline">
-                      {(
-                        Number(itemBatches.find((b) => b.id === selectedBatchId)?.quantity || 0) + numQty
-                      ).toFixed(2)}{' '}
-                      {activeItem?.unitName || 'units'}
-                    </strong>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={switchToNewBatch}
-                  className="text-xs text-amber-300 hover:text-white underline font-semibold flex-shrink-0"
-                >
-                  Create New Batch Instead
-                </button>
-              </div>
-            )}
-
-            {showBatchFields && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-800/80">
-                {/* Batch Number */}
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Batch Number (ब्याच नम्बर)
-                  </label>
-                  <div className="flex gap-1.5">
-                    <input
-                      type="text"
-                      placeholder="e.g. BATCH-2026-A1"
-                      value={batchNo}
-                      onChange={(e) => {
-                        setBatchNo(e.target.value);
-                        setSelectedBatchMode('new');
-                        setSelectedBatchId(null);
-                      }}
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs font-mono font-bold focus:outline-none focus:border-brand-500"
-                    />
-                  </div>
-                  <span className="text-[10px] text-slate-500">
-                    {selectedBatchMode === 'existing'
-                      ? 'Selected from existing batch'
-                      : 'Optional: Auto-assigned if omitted'}
-                  </span>
-                </div>
-
-                {/* Manufacturing Date (Connected AD & BS) */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Manufacturing Date (MFG - उत्पादन मिति)
-                  </label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div>
-                      <input
-                        type="date"
-                        value={mfgDateAD}
-                        onChange={(e) => handleMfgADChange(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:border-brand-500"
-                      />
-                      <span className="text-[9px] text-slate-500 block">AD (English)</span>
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="2083-01-01"
-                        value={mfgDateBS}
-                        onChange={(e) => handleMfgBSChange(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-950 border border-amber-700/60 rounded-xl text-amber-300 text-xs font-mono focus:outline-none focus:border-amber-500"
-                      />
-                      <span className="text-[9px] text-amber-400/80 block">BS (नेपाली)</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Expiry Date (Connected AD & BS) */}
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-slate-300 mb-1">
-                    Expiry Date (समाप्ति मिति)
-                  </label>
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div>
-                      <input
-                        type="date"
-                        value={expiryDateAD}
-                        onChange={(e) => handleExpiryADChange(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs focus:outline-none focus:border-brand-500"
-                      />
-                      <span className="text-[9px] text-slate-500 block">AD (English)</span>
-                    </div>
-                    <div>
-                      <input
-                        type="text"
-                        placeholder="2084-01-01"
-                        value={expiryDateBS}
-                        onChange={(e) => handleExpiryBSChange(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-slate-950 border border-amber-700/60 rounded-xl text-amber-300 text-xs font-mono focus:outline-none focus:border-amber-500"
-                      />
-                      <span className="text-[9px] text-amber-400/80 block">BS (नेपाली)</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
+              </>
             )}
           </div>
 

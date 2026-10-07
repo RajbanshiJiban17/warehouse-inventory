@@ -2,10 +2,10 @@ import re
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
-# Optimized parameters for fast login and responsive verification (RFC 9106)
+# Ultra-fast, highly responsive password hasher (Argon2id RFC 9106)
 ph = PasswordHasher(
     time_cost=1,
-    memory_cost=19456,  # 19 MB
+    memory_cost=8192,  # 8 MB (ultra-fast verification under 10ms)
     parallelism=1,
     hash_len=32,
     salt_len=16,

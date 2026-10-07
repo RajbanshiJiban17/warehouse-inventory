@@ -8,11 +8,14 @@ import {
   BarChart3,
   Flame,
   Package,
+  FileSpreadsheet,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import type { DashboardStats } from '../types';
 
 export const Dashboard: React.FC = () => {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [charts, setCharts] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +44,40 @@ export const Dashboard: React.FC = () => {
         <div className="flex flex-col items-center space-y-3">
           <div className="w-10 h-10 border-4 border-brand-500 border-t-transparent rounded-full animate-spin"></div>
           <span>Loading warehouse analytics...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (stats && stats.totalItems === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-gradient-to-r from-slate-950 via-slate-900 to-brand-950 p-6 rounded-2xl border border-slate-800 shadow-xl">
+          <h1 className="text-2xl font-bold text-white tracking-tight">Warehouse Operations Center</h1>
+          <p className="text-slate-400 text-sm mt-1">
+            Real-time stock movements, automatic quantity deductions, and inventory velocity indicators.
+          </p>
+        </div>
+
+        <div className="bg-slate-950 border border-slate-800 rounded-2xl p-10 text-center max-w-2xl mx-auto space-y-5 shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-brand-500/10 border border-brand-500/20 text-brand-400 mx-auto flex items-center justify-center">
+            <Boxes className="w-8 h-8" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-extrabold text-white">कुनै डाटा छैन (No Inventory Data Uploaded Yet)</h2>
+            <p className="text-xs text-slate-400 leading-relaxed max-w-md mx-auto">
+              इन्भेन्टरी पूर्णतया सफा छ। जबसम्म तपाईंले सामानको सूची (Excel / CSV Spreadsheet) अपलोड गर्नुहुन्न, यहाँ कुनै पनि डाटा देखिने छैन।
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => navigate('/items')}
+              className="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-brand-600/30 flex items-center space-x-2 transition"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>Go to Item Master & Upload Spreadsheet (फाइल अपलोड)</span>
+            </button>
+          </div>
         </div>
       </div>
     );
